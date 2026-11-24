@@ -2,13 +2,19 @@
 
 `written-reasoning` extends the shared semi-essay step model. It provides authored hints, a model answer and process-specific review criteria. The learner writes first, explicitly reveals the reference, checks the criteria and submits a revised response. These actions record **self-review**, not an academic correctness result.
 
-## Content
+## Content & 65/65 Chapter Coverage
 
-The initial batch adds 12 real source-backed exercises: two in each of MAT3504, MAT3514, THCS4 and OOP, plus one each in MAT1091, MAT1101, PHY1159 and general chemistry. Questions come from existing self-checks, textbook examples or already registered science questions. No new examination questions or scores are invented. The two math courses now expose one actual source excerpt lesson apiece while preserving their full local PDFs.
+All 8 courses (`MAT1091`, `MAT1101`, `MAT3504`, `MAT3514`, `THCS4`, `OOP`, `PHY1159`, `CHE1080`) expose **90 source-backed written & hybrid essay exercises** (`928` total exercises across `308` lessons), covering **100% of all 65 chapters**. Questions come from verified lecture notes, textbook examples, or registered science/CS banks without inventing fake academic content or scores.
 
-Each authored `src/content/courses/<course>/written-practice.ts` exports a readonly semi-essay array. `withWrittenPractice` attaches exercises to known lessons, preserving existing exercise IDs and rejecting orphan/duplicate additions. The tiny bank index supplies course-page links; the shared page does not branch on subject names. Chemistry retains its lazy exercise bank and adds its written activity there, rather than copying the full bank eagerly.
+Each authored `src/content/courses/<course>/written-practice.ts` (and optional `semi-essays.ts`) exports a readonly semi-essay array. `withWrittenPractice` attaches exercises to known lessons, preserving existing exercise IDs and rejecting orphan/duplicate additions. Shared pages (`CoursePage`, `CourseAtlas`, `CourseDependencyGraph`, `LessonPage`, `ChapterExamPage`) surface written A4 practice and chapter exams generically without branching on subject names.
 
-The DSA, physics and chemistry importers preserve authored practice extensions when regenerated. Physics also retains the separate existing diagram-based semi-essay bank. Run the original import commands to reproduce migrated base content; authored practice remains a separate reviewed batch.
+## Ruled A4 Sheet & Integrated Special-Character Input
+
+`RuledA4Sheet` (`src/components/learning/RuledA4Sheet.tsx` + `src/styles/written-practice.css`) renders an exam-style ruled horizontal A4 folio (`--hus-a4-line: 2rem` synced with `background-attachment: local`, left margin line, light ivory `#fcfbf7` and dark nocturnal vellum `#0d1524`) with a docked flush `MathSymbolToolbar` (chapter/course/all scopes, `Unicode` / `Mathlib \` / `LaTeX` modes), `\` `MathSlashAutocomplete`, and a live KaTeX preview band at the foot of the sheet. It is shared across `WrittenReasoningStepView`, `ChemistryEssayLab`, and `ChapterExamPage`.
+
+## Adaptive End-of-Chapter Exam (3–10 Questions)
+
+`src/core/learning/chapter-exam.ts` (`summarizeChapterExamPool`, `buildChapterExamPaper`, `evaluateChapterExam`) generates deterministic seeded chapter exams between **3 and 10 questions** (`short` 3–4, `standard` 5–7, `comprehensive` 8–10, or exact user count clamped to `[min(3, pool), min(10, pool)]`). Selection guarantees at least one question per available exercise form (`semi-essay` on ruled A4 paper prioritized first, alongside `short-answer`, `multiple-answer`, and `multiple-choice`) and spreads evenly across lessons in the chapter. Sessions persist under `hus-learning-hub:chapter-exam:v1:<courseId>:<chapterId>` via `src/infrastructure/progress/chapter-exam-store.ts`. Objective items grade deterministically on submit, while A4 written items unlock model answers and rubric self-checks without fabricating prose scores.
 
 ## Drafts and outcomes
 

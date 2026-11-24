@@ -1,6 +1,7 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import type { Course, EntityId } from '../../domain/learning';
+import type { SemiEssayExercise } from '../../domain/semi-essay';
 import type { SkillQuest } from '../../domain/skill-quest';
 import type { LearningContent } from '../../domain/workspace';
 import {
@@ -17,6 +18,7 @@ export interface CourseDependencyGraphProps {
   readonly completedLessonIds: readonly EntityId[];
   readonly completedQuestIds?: readonly EntityId[] | undefined;
   readonly courseQuests?: readonly SkillQuest[] | undefined;
+  readonly writtenByLessonId?: ReadonlyMap<EntityId, readonly SemiEssayExercise[]> | undefined;
   readonly nextRecommendedLessonId?: EntityId | undefined;
   readonly selectedChapterId: EntityId | null;
   readonly onSelectChapter: (chapterId: EntityId | null) => void;
@@ -70,6 +72,7 @@ export function CourseDependencyGraph({
   completedLessonIds,
   completedQuestIds,
   courseQuests,
+  writtenByLessonId,
   nextRecommendedLessonId,
   selectedChapterId,
   onSelectChapter,
@@ -600,6 +603,8 @@ export function CourseDependencyGraph({
               const isCompleted = isLessonMastered(node.id);
               const lessonQuests = questsByLessonId.get(node.id) ?? [];
               const primaryQuest = lessonQuests[0];
+              const lessonWritten = writtenByLessonId?.get(node.id) ?? [];
+              const primaryWritten = lessonWritten[0];
               const isNextRec = nextRecommendedLessonId === node.id && !isCompleted;
               const isActive = activeLessonNode?.id === node.id;
               const isAncestor = activeAncestorSet.has(node.id);
@@ -706,6 +711,14 @@ export function CourseDependencyGraph({
                         className="pointer-events-auto relative z-10 inline-flex shrink-0 items-center gap-1 rounded-full border border-starlight/55 bg-warning-subtle px-2 py-0.5 font-mono text-[10px] font-semibold text-warning no-underline transition-colors hover:border-starlight hover:bg-warning-subtle/90 focus-visible:outline-2 focus-visible:outline-accent"
                       >
                         ⚡ 4 mốc
+                      </Link>
+                    ) : primaryWritten && !isExternal ? (
+                      <Link
+                        to={`/courses/${course.id}/lessons/${node.id}/practice/${primaryWritten.id}`}
+                        aria-label={`Tự luận giấy A4: ${primaryWritten.title}`}
+                        className="pointer-events-auto relative z-10 inline-flex shrink-0 items-center gap-1 rounded-full border border-accent/45 bg-accent-subtle px-2 py-0.5 font-mono text-[10px] font-semibold text-accent-ink no-underline transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent"
+                      >
+                        Tự luận A4
                       </Link>
                     ) : (
                       <ChevronRightIcon

@@ -7,6 +7,7 @@ import { preloadCataloguePage, preloadCoursesPage } from './route-transition';
 const CataloguePage = lazy(preloadCataloguePage);
 const CoursesPage = lazy(preloadCoursesPage);
 const CoursePage = lazy(() => import('../pages/CoursePage'));
+const ChapterExamPage = lazy(() => import('../pages/ChapterExamPage'));
 const LessonPage = lazy(() => import('../pages/LessonPage'));
 const PracticePage = lazy(() => import('../pages/PracticePage'));
 const QuestPage = lazy(() => import('../pages/QuestPage'));
@@ -23,6 +24,7 @@ export function App() {
             <Route index element={<CataloguePage />} />
             <Route path="courses" element={<CoursesPage />} />
             <Route path="courses/:courseId" element={<CoursePage />} />
+            <Route path="courses/:courseId/chapters/:chapterId/exam" element={<ChapterExamPage />} />
             <Route path="courses/:courseId/lessons/:lessonId" element={<LessonPage />} />
             <Route path="courses/:courseId/lessons/:lessonId/practice/:exerciseId" element={<PracticePage />} />
             <Route path="quests/:questId" element={<QuestPage />} />

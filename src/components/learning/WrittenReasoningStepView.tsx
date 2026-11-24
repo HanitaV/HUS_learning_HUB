@@ -1,4 +1,4 @@
-﻿import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
+﻿import { useMemo, useState } from 'react';
 import type {
   CoachingPromptMode,
   GroundedEssayContextPacket,
@@ -6,29 +6,19 @@ import type {
   TutorCoachingFeedback,
   TutorCriterionStatus,
 } from '../../domain/curriculum-tutor';
-import type { MathSymbol, MathSymbolContext, MathSymbolInsertMode } from '../../domain/math-symbols';
+import type { MathSymbolContext } from '../../domain/math-symbols';
 import type { WrittenReasoningStep, WrittenStepDraft } from '../../domain/semi-essay';
 import { useMathSymbolPreferences } from '../../app/useMathSymbolPreferences';
 import { useWebMcpGuide } from '../../app/WebMcpGuideContext';
 import { formatAskGeminiPromptPacket } from '../../core/learning/curriculum-rag';
-import {
-  applyShorthandSuggestion,
-  detectActiveBackslashQuery,
-  filterShorthandSuggestions,
-  renderTextByMathMode,
-  shouldAutoShowMathPreview,
-  type ActiveBackslashQuery,
-  type MathShorthandEntry,
-} from '../../core/learning/math-shorthand';
-import { insertMathSymbolAtCursor } from '../../core/learning/math-symbols';
+import { renderTextByMathMode } from '../../core/learning/math-shorthand';
 import { evaluateWrittenReasoningReview } from '../../core/learning/semi-essay';
 import { WEBMCP_ORIGIN_TRIAL_INFO } from '../../infrastructure/ai/webmcp-essay-bridge';
 import { Badge } from '../ui/Badge';
 import { AlertCircleIcon, BookOpenIcon, CheckCircleIcon, CheckIcon, CopyIcon } from '../ui/Icons';
 import { WEBMCP_CHROME_FLAG_URL } from '../ui/WebMcpNoticeToast';
 import Markdown from './Markdown';
-import { MathSlashAutocomplete } from './MathSlashAutocomplete';
-import { MathSymbolToolbar } from './MathSymbolToolbar';
+import { RuledA4Sheet } from './RuledA4Sheet';
 
 const CRITERION_STATUS_META: Record<
   TutorCriterionStatus,
@@ -68,19 +58,12 @@ export function WrittenReasoningStepView({
   update,
   onReviewed,
 }: WrittenReasoningStepViewProps) {
-  const { preferences, setInsertMode } = useMathSymbolPreferences();
+  const { preferences } = useMathSymbolPreferences();
   const { openGuide } = useWebMcpGuide();
   const activeMathMode = preferences.insertMode;
 
   const [hintCount, setHintCount] = useState(0);
   const [showKeyOrientation, setShowKeyOrientation] = useState(false);
-  const [previewResponseOverride, setPreviewResponseOverride] = useState<boolean | null>(null);
-  const [previewRevisionOverride, setPreviewRevisionOverride] = useState<boolean | null>(null);
-  const [slashState, setSlashState] = useState<{
-    readonly field: 'response' | 'revision';
-    readonly activeQuery: ActiveBackslashQuery;
-    readonly highlightIndex: number;
-  } | null>(null);
   const [copyStatus, setCopyStatus] = useState<{
     readonly mode: CoachingPromptMode;
     readonly message: string;
@@ -90,139 +73,12 @@ export function WrittenReasoningStepView({
   const [importError, setImportError] = useState<string | null>(null);
   const [copiedWebMcpFlag, setCopiedWebMcpFlag] = useState(false);
 
-  const responseRef = useRef<HTMLTextAreaElement | null>(null);
-  const revisionRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const previewResponse =
-    previewResponseOverride ?? shouldAutoShowMathPreview(draft.response, activeMathMode);
-  const previewRevision =
-    previewRevisionOverride ?? shouldAutoShowMathPreview(draft.revision, activeMathMode);
-
-  const slashSuggestions = useMemo(() => {
-    if (!slashState) return [];
-    return filterShorthandSuggestions(slashState.activeQuery.query, activeMathMode);
-  }, [slashState, activeMathMode]);
-
-  const insertShorthandEntryAtCursor = (
-    field: 'response' | 'revision',
-    entry: MathShorthandEntry,
-    mode: MathSymbolInsertMode,
-  ) => {
-    const ref = field === 'response' ? responseRef : revisionRef;
-    const current = draft[field];
-    const el = ref.current;
-    const posStart = el?.selectionStart ?? current.length;
-    const posEnd = el?.selectionEnd ?? posStart;
-    const applied = applyShorthandSuggestion(
-      current,
-      { replaceFrom: posStart, replaceTo: posEnd, query: '' },
-      entry,
-      mode,
-      { wrapLatexWithDollars: true },
-    );
-    update({ [field]: applied.value });
-    setSlashState(null);
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        ref.current.focus();
-        ref.current.setSelectionRange(applied.caret, applied.caret);
-      }
-    });
-  };
-
-  const commitSlashSuggestion = (field: 'response' | 'revision', entry: MathShorthandEntry) => {
-    if (!slashState || slashState.field !== field) return;
-    const ref = field === 'response' ? responseRef : revisionRef;
-    const current = draft[field];
-    const applied = applyShorthandSuggestion(
-      current,
-      slashState.activeQuery,
-      entry,
-      activeMathMode,
-      { wrapLatexWithDollars: true },
-    );
-    update({ [field]: applied.value });
-    setSlashState(null);
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        ref.current.focus();
-        ref.current.setSelectionRange(applied.caret, applied.caret);
-      }
-    });
-  };
-
-  const handleFieldKeyDown = (
-    field: 'response' | 'revision',
-    event: KeyboardEvent<HTMLTextAreaElement>,
-  ) => {
-    if (!slashState || slashState.field !== field || slashSuggestions.length === 0) return;
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setSlashState(prev =>
-        prev
-          ? { ...prev, highlightIndex: (prev.highlightIndex + 1) % slashSuggestions.length }
-          : null,
-      );
-      return;
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setSlashState(prev =>
-        prev
-          ? {
-              ...prev,
-              highlightIndex:
-                (prev.highlightIndex - 1 + slashSuggestions.length) % slashSuggestions.length,
-            }
-          : null,
-      );
-      return;
-    }
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      const picked = slashSuggestions[slashState.highlightIndex] ?? slashSuggestions[0];
-      if (picked) {
-        event.preventDefault();
-        commitSlashSuggestion(field, picked);
-      }
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setSlashState(null);
-    }
-  };
-
-  const insertIntoField = (
-    field: 'response' | 'revision',
-    symbol: MathSymbol,
-    mode: MathSymbolInsertMode,
-  ) => {
-    const ref = field === 'response' ? responseRef : revisionRef;
-    const current = draft[field];
-    const el = ref.current;
-    const inserted = insertMathSymbolAtCursor(
-      current,
-      el?.selectionStart ?? current.length,
-      el?.selectionEnd ?? current.length,
-      symbol,
-      mode,
-      { wrapLatexWithDollars: true },
-    );
-    update({ [field]: inserted.value });
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        ref.current.focus();
-        ref.current.setSelectionRange(inserted.selectionStart, inserted.selectionEnd);
-      }
-    });
-  };
-
   const handleInsertScaffold = (scaffold: ReasoningScaffoldTemplate) => {
     const current = draft.response.trim();
     const nextValue = current ? `${draft.response.trimEnd()}\n\n${scaffold.template}` : scaffold.template;
     update({ response: nextValue });
     requestAnimationFrame(() => {
-      responseRef.current?.focus();
+      document.getElementById(`${step.id}-response`)?.focus();
     });
   };
 
@@ -343,76 +199,16 @@ export function WrittenReasoningStepView({
         </div>
       ) : null}
 
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label htmlFor={`${step.id}-response`} className="block text-sm font-semibold text-ink">
-            Lập luận của bạn
-          </label>
-          <button
-            type="button"
-            onClick={() => setPreviewResponseOverride(!previewResponse)}
-            aria-pressed={previewResponse}
-            className="min-h-[28px] rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:text-ink"
-          >
-            {previewResponse ? 'Ẩn xem trước' : 'Xem trước công thức'}
-          </button>
-        </div>
-        <MathSymbolToolbar
-          variant="expanded"
-          allowLatexMode
-          context={symbolContext}
-          onInsert={(symbol, mode) => insertIntoField('response', symbol, mode)}
-          onInsertShorthandEntry={(entry, mode) =>
-            insertShorthandEntryAtCursor('response', entry, mode)
-          }
-          label="Bảng chèn ký hiệu toán học cho lập luận"
-        />
-        <textarea
-          ref={responseRef}
-          id={`${step.id}-response`}
-          value={draft.response}
-          onChange={event => {
-            const val = event.target.value;
-            const caret = event.target.selectionStart;
-            update({ response: val });
-            const q = detectActiveBackslashQuery(val, caret);
-            setSlashState(
-              q ? { field: 'response', activeQuery: q, highlightIndex: 0 } : null,
-            );
-          }}
-          onKeyDown={event => handleFieldKeyDown('response', event)}
-          onBlur={() => setSlashState(prev => (prev?.field === 'response' ? null : prev))}
-          rows={5}
-          maxLength={20000}
-          className="written-practice-input"
-        />
-        {slashState?.field === 'response' && slashSuggestions.length > 0 ? (
-          <MathSlashAutocomplete
-            id={`${step.id}-response-slash`}
-            query={slashState.activeQuery.query}
-            suggestions={slashSuggestions}
-            highlightedIndex={slashState.highlightIndex}
-            mode={activeMathMode}
-            onChangeMode={setInsertMode}
-            onSelect={entry => commitSlashSuggestion('response', entry)}
-            onClose={() => setSlashState(null)}
-          />
-        ) : null}
-        {previewResponse ? (
-          <div
-            data-math-live-preview="response"
-            className="rounded-[var(--radius-md)] border border-border bg-canvas/80 p-3 text-sm leading-relaxed text-ink"
-          >
-            {draft.response.trim() ? (
-              <Markdown>{renderTextByMathMode(draft.response, activeMathMode)}</Markdown>
-            ) : (
-              <p className="!my-0 text-xs text-ink-muted">
-                Nhập nội dung hoặc công thức để xem trước trực tiếp.
-              </p>
-            )}
-          </div>
-        ) : null}
-      </div>
+      <RuledA4Sheet
+        id={`${step.id}-response`}
+        label="Lập luận của bạn"
+        sheetTag="Giấy A4 · Bản nháp"
+        value={draft.response}
+        onChange={val => update({ response: val })}
+        symbolContext={symbolContext}
+        toolbarLabel="Bảng chèn ký hiệu toán học cho lập luận"
+        previewKey="response"
+      />
 
       {/* Hints & Pre-Reveal Orientation Controls */}
       <div className="flex flex-wrap items-center gap-2">
@@ -854,73 +650,16 @@ export function WrittenReasoningStepView({
             })}
           </fieldset>
 
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label htmlFor={`${step.id}-revision`} className="block text-sm font-semibold text-ink">
-                Bản sửa của bạn
-              </label>
-              <button
-                type="button"
-                onClick={() => setPreviewRevisionOverride(!previewRevision)}
-                aria-pressed={previewRevision}
-                className="min-h-[28px] rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:text-ink"
-              >
-                {previewRevision ? 'Ẩn xem trước' : 'Xem trước công thức'}
-              </button>
-            </div>
-            <MathSymbolToolbar
-              variant="expanded"
-              allowLatexMode
-              context={symbolContext}
-              onInsert={(symbol, mode) => insertIntoField('revision', symbol, mode)}
-              onInsertShorthandEntry={(entry, mode) =>
-                insertShorthandEntryAtCursor('revision', entry, mode)
-              }
-              label="Bảng chèn ký hiệu toán học cho bản sửa"
-            />
-            <textarea
-              ref={revisionRef}
-              id={`${step.id}-revision`}
-              value={draft.revision}
-              onChange={event => {
-                const val = event.target.value;
-                const caret = event.target.selectionStart;
-                update({ revision: val });
-                const q = detectActiveBackslashQuery(val, caret);
-                setSlashState(
-                  q ? { field: 'revision', activeQuery: q, highlightIndex: 0 } : null,
-                );
-              }}
-              onKeyDown={event => handleFieldKeyDown('revision', event)}
-              onBlur={() => setSlashState(prev => (prev?.field === 'revision' ? null : prev))}
-              rows={5}
-              maxLength={20000}
-              className="written-practice-input"
-            />
-            {slashState?.field === 'revision' && slashSuggestions.length > 0 ? (
-              <MathSlashAutocomplete
-                id={`${step.id}-revision-slash`}
-                query={slashState.activeQuery.query}
-                suggestions={slashSuggestions}
-                highlightedIndex={slashState.highlightIndex}
-                mode={activeMathMode}
-                onChangeMode={setInsertMode}
-                onSelect={entry => commitSlashSuggestion('revision', entry)}
-                onClose={() => setSlashState(null)}
-              />
-            ) : null}
-            {previewRevision ? (
-              <div className="rounded-[var(--radius-md)] border border-border bg-canvas/80 p-3 text-sm leading-relaxed text-ink">
-                {draft.revision.trim() ? (
-                  <Markdown>{renderTextByMathMode(draft.revision, activeMathMode)}</Markdown>
-                ) : (
-                  <p className="!my-0 text-xs text-ink-muted">
-                    Nhập nội dung hoặc công thức để xem trước trực tiếp.
-                  </p>
-                )}
-              </div>
-            ) : null}
-          </div>
+          <RuledA4Sheet
+            id={`${step.id}-revision`}
+            label="Bản sửa của bạn"
+            sheetTag="Giấy A4 · Bản hoàn chỉnh"
+            value={draft.revision}
+            onChange={val => update({ revision: val })}
+            symbolContext={symbolContext}
+            toolbarLabel="Bảng chèn ký hiệu toán học cho bản sửa"
+            previewKey="revision"
+          />
 
           <button
             type="button"

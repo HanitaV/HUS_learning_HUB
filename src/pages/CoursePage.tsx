@@ -216,11 +216,14 @@ export default function CoursePage() {
   const writingSection =
     writingExercises.length > 0 ? (
       <section aria-labelledby="writing-heading" className="space-y-4">
-        <h2 id="writing-heading" className="heading-section">
-          Luyện trình bày lời giải
-        </h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="writing-heading" className="heading-section">
+            Luyện trình bày lời giải
+          </h2>
+          <Badge tone="accent">{writingExercises.length} bài tự luận giấy A4</Badge>
+        </div>
         <p className="text-sm leading-relaxed text-ink-secondary">
-          Tự viết lập luận, mở gợi ý khi cần, rồi đối chiếu và sửa bài theo từng bước.
+          Trình bày lập luận trên mặt giấy A4 kẻ ngang tích hợp bộ gõ ký tự đặc biệt &amp; công thức, mở gợi ý khi cần rồi tự đối chiếu rubric từng bước.
         </p>
         <ul className="divide-y divide-border border-y border-border">
           {writingExercises.map(exercise => {
@@ -235,8 +238,8 @@ export default function CoursePage() {
                     <span>{exercise.title}</span>
                     <Badge tone={hasDiagram ? 'accent' : 'neutral'}>
                       {hasDiagram
-                        ? `Tự luận + Biểu đồ (${exercise.steps.length} bước)`
-                        : `Tự luận (${exercise.steps.length} bước)`}
+                        ? `Giấy A4 + Biểu đồ (${exercise.steps.length} bước)`
+                        : `Giấy A4 (${exercise.steps.length} bước)`}
                     </Badge>
                   </span>
                   <ArrowRightIcon
@@ -312,6 +315,7 @@ export default function CoursePage() {
         content={learningContent}
         courseQuests={courseQuests}
         completedQuestIds={questProgress.completedQuestIds}
+        writtenExercises={writingExercises}
         initialChapterId={requestedChapterId}
       />
 
@@ -322,16 +326,10 @@ export default function CoursePage() {
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-10">
-          {!isDualTrack ? (
-            writingSection ?? (
-              <div className="rounded-[var(--radius-xl)] border border-border bg-surface/85 p-5 text-sm leading-relaxed text-ink-secondary">
-                Chạm vào từng bài trong <strong className="font-medium text-ink">Sơ đồ liên kết</strong> hoặc các{' '}
-                <strong className="font-medium text-ink">Nhiệm vụ 4 mốc</strong> ở trên để học tương tác theo từng chặng nhỏ.
-              </div>
-            )
-          ) : (
+          {writingSection ?? (
             <div className="rounded-[var(--radius-xl)] border border-border bg-surface/85 p-5 text-sm leading-relaxed text-ink-secondary">
-              Mỗi bài học trong sơ đồ phía trên được chia thành các chặng tương tác ngắn và liên kết trực tiếp với phòng luyện gõ code thực hành.
+              Chạm vào từng bài trong <strong className="font-medium text-ink">Sơ đồ liên kết</strong> hoặc các{' '}
+              <strong className="font-medium text-ink">Nhiệm vụ 4 mốc</strong> ở trên để học tương tác theo từng chặng nhỏ.
             </div>
           )}
         </div>
@@ -512,7 +510,6 @@ export default function CoursePage() {
                   </button>
                 </div>
                 {atlasAndMetadata}
-                {writingSection}
               </div>
             )}
           </div>

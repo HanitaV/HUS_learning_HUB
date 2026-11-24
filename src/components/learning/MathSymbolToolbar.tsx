@@ -60,6 +60,8 @@ export interface MathSymbolToolbarProps {
   readonly variant?: 'compact' | 'expanded';
   /** Whether to show the Unicode / Mathlib \ / LaTeX mode switch. */
   readonly allowLatexMode?: boolean;
+  /** Render flush inside an enclosing sheet without an outer rounded border. */
+  readonly flush?: boolean;
   /** Optional custom aria-label for the toolbar. */
   readonly label?: string;
 }
@@ -70,6 +72,7 @@ export function MathSymbolToolbar({
   onInsertShorthandEntry,
   variant = 'expanded',
   allowLatexMode = variant === 'expanded',
+  flush = false,
   label = 'Bảng chèn ký hiệu toán học',
 }: MathSymbolToolbarProps) {
   const { preferences, setDefaultScope, setInsertMode, toggleSymbol, resetScope } =
@@ -180,7 +183,11 @@ export function MathSymbolToolbar({
     <div
       role="region"
       aria-label={label}
-      className="hus-panel-enter space-y-2.5 rounded-[var(--radius-md)] border border-border bg-surface-subtle/60 p-2.5 sm:p-3"
+      className={
+        flush
+          ? 'space-y-2.5 px-3 py-2.5 sm:px-4'
+          : 'hus-panel-enter space-y-2.5 rounded-[var(--radius-md)] border border-border bg-surface-subtle/60 p-2.5 sm:p-3'
+      }
     >
       {/* Top control bar */}
       <div className="flex flex-wrap items-center justify-between gap-2">

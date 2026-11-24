@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import type { Course, EntityId } from '../../domain/learning';
+import type { SemiEssayExercise } from '../../domain/semi-essay';
 import type { SkillQuest } from '../../domain/skill-quest';
 import type { LearningContent } from '../../domain/workspace';
 import { useLearningProgress } from '../../app/useLearningProgress';
@@ -9,6 +10,7 @@ import { courseLessons } from '../../core/learning/content';
 import { Badge } from '../ui/Badge';
 import { CourseDependencyGraph } from './CourseDependencyGraph';
 import {
+  ArrowRightIcon,
   CheckCircleIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -20,6 +22,7 @@ export interface CourseAtlasProps {
   readonly content: LearningContent;
   readonly courseQuests?: readonly SkillQuest[] | undefined;
   readonly completedQuestIds?: readonly EntityId[] | undefined;
+  readonly writtenExercises?: readonly SemiEssayExercise[] | undefined;
   readonly initialChapterId?: EntityId | null | undefined;
 }
 
@@ -37,6 +40,7 @@ export function CourseAtlas({
   content,
   courseQuests,
   completedQuestIds,
+  writtenExercises,
   initialChapterId,
 }: CourseAtlasProps) {
   const { progress } = useLearningProgress();
@@ -80,6 +84,19 @@ export function CourseAtlas({
     }
     return map;
   }, [courseQuests]);
+
+  const writtenByLessonId = useMemo(() => {
+    const map = new Map<EntityId, SemiEssayExercise[]>();
+    for (const item of writtenExercises ?? []) {
+      const existing = map.get(item.lessonId);
+      if (existing) {
+        existing.push(item);
+      } else {
+        map.set(item.lessonId, [item]);
+      }
+    }
+    return map;
+  }, [writtenExercises]);
 
   const isLessonMastered = useCallback(
     (lessonId: EntityId) => {
@@ -436,16 +453,71 @@ export function CourseAtlas({
       {/* Main Content Area: Interactive Dependency Graph or Star-Thread List */}
       {hasChapters ? (
         view === 'graph' && !normalizedQuery ? (
-          <CourseDependencyGraph
-            course={course}
-            content={content}
-            completedLessonIds={progress.completedLessonIds}
-            completedQuestIds={completedQuestIds}
-            courseQuests={courseQuests}
-            nextRecommendedLessonId={nextRecommendedLesson?.id}
-            selectedChapterId={selectedChapterId}
-            onSelectChapter={setSelectedChapterId}
-          />
+          <div className="space-y-4">
+            <CourseDependencyGraph
+              course={course}
+              content={content}
+              completedLessonIds={progress.completedLessonIds}
+              completedQuestIds={completedQuestIds}
+              courseQuests={courseQuests}
+              writtenByLessonId={writtenByLessonId}
+              nextRecommendedLessonId={nextRecommendedLesson?.id}
+              selectedChapterId={selectedChapterId}
+              onSelectChapter={setSelectedChapterId}
+            />
+
+            {/* Chapter-end Written A4 & 3-10 Question Exam Station directly under Graph */}
+            {(() => {
+              const activeGraphChapter =
+                selectedChapter ??
+                (allLessons.length > 12 ? chaptersData[0] ?? null : chaptersData[0] ?? null);
+              if (!activeGraphChapter) return null;
+              const chWritten = activeGraphChapter.lessons.flatMap(
+                ({ lesson }) => writtenByLessonId.get(lesson.id) ?? [],
+              );
+              return (
+                <div
+                  data-chapter-exam-station={activeGraphChapter.chapter.id}
+                  className="flex flex-col gap-3 rounded-[var(--radius-xl)] border border-accent/35 bg-surface/95 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="accent" mono>
+                        Cuối Chương {activeGraphChapter.index + 1}
+                      </Badge>
+                      {chWritten.length > 0 ? (
+                        <Badge tone="neutral">{chWritten.length} tự luận giấy A4</Badge>
+                      ) : null}
+                      <span className="text-xs text-ink-muted">
+                        Đề 3–10 câu tùy dạng bài &amp; độ dài
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-ink">
+                      Tổng kết Chương {activeGraphChapter.index + 1}: {activeGraphChapter.chapter.title}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {chWritten[0] ? (
+                      <Link
+                        to={`/courses/${course.id}/lessons/${chWritten[0].lessonId}/practice/${chWritten[0].id}`}
+                        className="hus-btn hus-btn-secondary text-xs !no-underline"
+                      >
+                        <span>Luyện tự luận giấy A4</span>
+                      </Link>
+                    ) : null}
+                    <Link
+                      to={`/courses/${course.id}/chapters/${activeGraphChapter.chapter.id}/exam`}
+                      className="hus-btn hus-btn-primary text-xs !no-underline"
+                    >
+                      <span>Kiểm tra cuối Chương {activeGraphChapter.index + 1} (3–10 câu)</span>
+                      <ArrowRightIcon width={14} height={14} />
+                    </Link>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         ) : visibleChapters.length > 0 ? (
           <div className="space-y-10">
             {normalizedQuery ? (
@@ -520,6 +592,8 @@ export function CourseAtlas({
                         const isCompleted = isLessonMastered(lesson.id);
                         const lessonQuests = questsByLessonId.get(lesson.id) ?? [];
                         const primaryQuest = lessonQuests[0];
+                        const lessonWritten = writtenByLessonId.get(lesson.id) ?? [];
+                        const primaryWritten = lessonWritten[0];
                         const isNext = nextRecommendedLesson?.id === lesson.id && !isCompleted;
                         const isPrereqHighlighted = hoveredPrereqIds.includes(lesson.id);
                         const isHovered = hoveredLessonId === lesson.id;
@@ -608,6 +682,16 @@ export function CourseAtlas({
                                 </div>
                               </Link>
 
+                              {primaryWritten ? (
+                                <Link
+                                  to={`/courses/${course.id}/lessons/${lesson.id}/practice/${primaryWritten.id}`}
+                                  aria-label={`Tự luận giấy A4: ${primaryWritten.title}`}
+                                  className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-accent/45 bg-accent-subtle px-3 py-1.5 font-mono text-xs font-semibold text-accent-ink no-underline transition-colors hover:border-accent sm:self-center"
+                                >
+                                  <span>Tự luận A4</span>
+                                </Link>
+                              ) : null}
+
                               {primaryQuest ? (
                                 <Link
                                   to={`/quests/${primaryQuest.id}`}
@@ -622,6 +706,27 @@ export function CourseAtlas({
                         );
                       })}
                     </ol>
+
+                    {/* End-of-Chapter Exam Bar (3-10 questions) */}
+                    {!normalizedQuery ? (
+                      <div className="ml-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-accent/30 bg-surface/90 px-4 py-3 sm:ml-8">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge tone="accent" mono>
+                            Tổng kết Chương {item.index + 1}
+                          </Badge>
+                          <span className="text-ink-secondary">
+                            Đề 3–10 câu theo dạng bài (có tự luận giấy A4 kẻ ngang)
+                          </span>
+                        </div>
+                        <Link
+                          to={`/courses/${course.id}/chapters/${item.chapter.id}/exam`}
+                          className="hus-btn hus-btn-primary min-h-[36px] px-3.5 py-1.5 text-xs !no-underline"
+                        >
+                          <span>Kiểm tra cuối Chương {item.index + 1}</span>
+                          <ArrowRightIcon width={13} height={13} />
+                        </Link>
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}

@@ -13,6 +13,7 @@ import { parseMicroLesson } from '../core/learning/micro-lesson';
 import { loadLessonAnimation } from '../infrastructure/animations/loader';
 import { courseRegistry, getSubjectModule } from '../infrastructure/content/catalogue';
 import { learningContent, loadLessonExercises, loadLessonMarkdown } from '../infrastructure/content/learning';
+import { writtenPractice } from '../infrastructure/content/written-practice';
 import { getQuestsForLesson, skillQuestList } from '../infrastructure/quests/registry';
 import { progressStore } from '../infrastructure/progress/store';
 import { ErrorBoundary } from '../app/ErrorBoundary';
@@ -205,6 +206,13 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
   );
 
   const lessonQuests = useMemo(() => getQuestsForLesson(lesson.id), [lesson.id]);
+  const lessonWritten = useMemo(
+    () => writtenPractice.filter(item => item.lessonId === lesson.id),
+    [lesson.id],
+  );
+  const nextTopic = next ? learningContent.topics.find(t => t.id === next.topicId) : undefined;
+  const isEndOfChapter = Boolean(chapter && (!next || nextTopic?.chapterId !== chapter.id));
+  const chapterIndex = chapter ? course.chapterIds.indexOf(chapter.id) : -1;
   const parsedMicro = useMemo(() => (body !== null ? parseMicroLesson(body) : null), [body]);
   const subjectModule = useMemo(
     () => getSubjectModule(course.subjectId),
@@ -420,6 +428,38 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
                 </div>
               );
             })}
+          </div>
+        ) : null}
+
+        {/* Direct Ruled-A4 Written Essay Launch Card when this lesson includes written practice */}
+        {lessonWritten.length > 0 ? (
+          <div className="mb-6 space-y-3">
+            {lessonWritten.map(item => (
+              <div
+                key={item.id}
+                className="flex flex-col gap-3 rounded-[var(--radius-xl)] border border-accent/40 bg-accent-subtle/40 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="accent">Tự luận · Giấy A4 kẻ ngang</Badge>
+                    <Badge tone="neutral" mono>
+                      {item.steps.length} bước trình bày
+                    </Badge>
+                  </div>
+                  <p className="!my-0 font-display text-base font-medium text-ink">{item.title}</p>
+                  <p className="!my-0 text-xs text-ink-secondary">
+                    Trình bày lời giải trên tờ giấy A4 kẻ ngang tích hợp bộ gõ ký tự đặc biệt &amp; công thức, đối chiếu rubric từng ý.
+                  </p>
+                </div>
+                <Link
+                  to={`/courses/${course.id}/lessons/${lesson.id}/practice/${item.id}`}
+                  className="hus-btn hus-btn-primary shrink-0 !no-underline text-xs"
+                >
+                  <span>Làm trên giấy A4</span>
+                  <ArrowRightIcon width={14} height={14} />
+                </Link>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -749,6 +789,41 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
               ← Về Sơ đồ liên kết bài học ({course.academicCode ?? course.id})
             </Link>
           </div>
+          {chapter ? (
+            <div
+              className={`flex flex-col gap-3 rounded-[var(--radius-xl)] border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                isEndOfChapter
+                  ? 'border-accent/55 bg-accent-subtle/45'
+                  : 'border-border bg-surface-subtle/50'
+              }`}
+            >
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={isEndOfChapter ? 'accent' : 'neutral'} mono>
+                    {isEndOfChapter
+                      ? `Hoàn tất Chương ${chapterIndex + 1}`
+                      : `Chương ${chapterIndex + 1}`}
+                  </Badge>
+                  <span className="text-xs text-ink-muted">
+                    Đề 3–10 câu tùy dạng bài &amp; độ dài (kèm tự luận giấy A4)
+                  </span>
+                </div>
+                <p className="!my-0 text-sm font-semibold text-ink">
+                  Kiểm tra cuối chương: {chapter.title}
+                </p>
+              </div>
+              <Link
+                to={`/courses/${course.id}/chapters/${chapter.id}/exam`}
+                className={`hus-btn shrink-0 !no-underline text-xs ${
+                  isEndOfChapter ? 'hus-btn-primary' : 'hus-btn-secondary'
+                }`}
+              >
+                <span>Làm bài kiểm tra chương</span>
+                <ArrowRightIcon width={14} height={14} />
+              </Link>
+            </div>
+          ) : null}
+
           {previous || next ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {previous ? (
