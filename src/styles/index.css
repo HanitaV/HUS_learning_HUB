@@ -1,0 +1,1469 @@
+@import "tailwindcss" source(none);
+@source "../";
+@import "./fonts.css";
+@import "./spectral-fonts.css";
+
+/*
+ * HUS Learning Hub — Atmospheric Observatory Design System
+ * Light mode: luminous morning observatory alabaster-sky (#f7f9fc) & nocturnal indigo ink (#0e1726).
+ * Dark mode: deep starlit observatory midnight (#090e18 / #101726 / #162033) with luminous sapphire accent.
+ * Display voice: locally bundled Spectral (300–600, full Vietnamese diacritics).
+ * Body/UI voice: locally bundled Be Vietnam Pro (400–600, full Vietnamese diacritics).
+ */
+@theme {
+  --font-display: 'Spectral', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Be Vietnam Pro', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  --color-canvas: var(--hus-canvas);
+  --color-surface: var(--hus-surface);
+  --color-surface-subtle: var(--hus-surface-subtle);
+  --color-surface-hover: var(--hus-surface-hover);
+
+  --color-border: var(--hus-border);
+  --color-border-strong: var(--hus-border-strong);
+
+  --color-ink: var(--hus-ink);
+  --color-ink-secondary: var(--hus-ink-secondary);
+  --color-ink-muted: var(--hus-ink-muted);
+
+  --color-accent: var(--hus-accent);
+  --color-accent-hover: var(--hus-accent-hover);
+  --color-accent-solid: var(--hus-accent-solid);
+  --color-accent-solid-hover: var(--hus-accent-solid-hover);
+  --color-accent-subtle: var(--hus-accent-subtle);
+  --color-accent-ink: var(--hus-accent-ink);
+
+  --color-starlight: var(--hus-starlight);
+  --color-orbit: var(--hus-orbit);
+  --color-orbit-strong: var(--hus-orbit-strong);
+
+  --color-success: var(--hus-success);
+  --color-success-subtle: var(--hus-success-subtle);
+  --color-warning: var(--hus-warning);
+  --color-warning-subtle: var(--hus-warning-subtle);
+  --color-danger: var(--hus-danger);
+  --color-danger-subtle: var(--hus-danger-subtle);
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+:root {
+  color-scheme: light;
+  --hus-canvas: #f7f9fc;
+  --hus-surface: #ffffff;
+  --hus-surface-subtle: #eef3f9;
+  --hus-surface-hover: #e4ecf6;
+
+  --hus-border: #dfe6f0;
+  --hus-border-strong: #c6d3e3;
+
+  --hus-ink: #0e1726;
+  --hus-ink-secondary: #38475e;
+  --hus-ink-muted: #586980;
+
+  --hus-accent: #1a56db;
+  --hus-accent-hover: #1543ad;
+  --hus-accent-solid: #1a56db;
+  --hus-accent-solid-hover: #1543ad;
+  --hus-accent-subtle: #e8f0fe;
+  --hus-accent-ink: #153e9a;
+
+  --hus-starlight: #b07a22;
+  --hus-orbit: rgb(26 86 219 / 0.16);
+  --hus-orbit-strong: rgb(26 86 219 / 0.30);
+  --hus-glow-core: rgb(26 86 219 / 0.10);
+  --hus-glow-warm: rgb(176 122 34 / 0.08);
+
+  --hus-success: #157347;
+  --hus-success-subtle: #edf8f2;
+  --hus-warning: #9a5208;
+  --hus-warning-subtle: #fef6e7;
+  --hus-danger: #b42318;
+  --hus-danger-subtle: #fef2f2;
+
+  --hus-shadow-nav: 0 2px 6px rgb(14 23 38 / 0.04), 0 12px 32px -12px rgb(14 23 38 / 0.1);
+  --hus-shadow-card: 0 1px 2px rgb(14 23 38 / 0.03), 0 12px 28px -18px rgb(14 23 38 / 0.12);
+  --hus-shadow-sheet: 0 20px 48px -16px rgb(14 23 38 / 0.2);
+
+  --hus-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --hus-reading-scale: 1rem;
+  --hus-reading-leading: 1.75;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --hus-canvas: #090e18;
+  --hus-surface: #101726;
+  --hus-surface-subtle: #162033;
+  --hus-surface-hover: #1d2a42;
+
+  --hus-border: #1f2d45;
+  --hus-border-strong: #2f4263;
+
+  --hus-ink: #eef2f8;
+  --hus-ink-secondary: #b6c3d7;
+  --hus-ink-muted: #8596b0;
+
+  --hus-accent: #7cb3ff;
+  --hus-accent-hover: #a5cbff;
+  --hus-accent-solid: #2563eb;
+  --hus-accent-solid-hover: #1d4ed8;
+  --hus-accent-subtle: #152440;
+  --hus-accent-ink: #d6e6ff;
+
+  --hus-starlight: #e4bc6a;
+  --hus-orbit: rgb(124 179 255 / 0.22);
+  --hus-orbit-strong: rgb(124 179 255 / 0.38);
+  --hus-glow-core: rgb(74 144 255 / 0.18);
+  --hus-glow-warm: rgb(228 188 106 / 0.10);
+
+  --hus-success: #52d98c;
+  --hus-success-subtle: #10281d;
+  --hus-warning: #f5be4f;
+  --hus-warning-subtle: #29200f;
+  --hus-danger: #f97066;
+  --hus-danger-subtle: #2d1517;
+
+  --hus-shadow-nav: 0 1px 0 rgb(255 255 255 / 0.05), 0 16px 36px -14px rgb(2 6 14 / 0.72);
+  --hus-shadow-card: 0 1px 0 rgb(255 255 255 / 0.04), 0 14px 32px -18px rgb(2 6 14 / 0.65);
+  --hus-shadow-sheet: 0 24px 56px -16px rgb(2 6 14 / 0.8);
+}
+
+:root[data-reading-size='comfortable'] {
+  --hus-reading-scale: 1.125rem;
+  --hus-reading-leading: 1.78;
+}
+
+@layer base {
+  html {
+    background-color: var(--hus-canvas);
+    color: var(--hus-ink);
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    overscroll-behavior-y: contain;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    scrollbar-color: var(--hus-border-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: var(--hus-canvas);
+    color: var(--hus-ink);
+    font-size: 1rem;
+    line-height: 1.5;
+    overflow-x: clip;
+    caret-color: var(--hus-accent);
+  }
+
+  ::selection {
+    background-color: var(--hus-accent-subtle);
+    color: var(--hus-accent-ink);
+  }
+
+  h1, h2, h3, h4 {
+    color: var(--hus-ink);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--hus-accent);
+    outline-offset: 3px;
+  }
+
+  button:not(:disabled),
+  a[href] {
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      transition-delay: 0ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@keyframes hus-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hus-link-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hus-hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hus-orbit-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hus-orbit-ccw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes hus-star-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes hus-float-a {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(4px, -9px, 0);
+  }
+}
+
+@keyframes hus-float-b {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-5px, 8px, 0);
+  }
+}
+
+@keyframes hus-float-c {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(5px, 7px, 0);
+  }
+}
+
+@keyframes hus-pulse-soft {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes hus-vt-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+}
+
+@keyframes hus-vt-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hus-vt-pull-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-48px) scale(0.985);
+  }
+}
+
+@keyframes hus-vt-pull-in {
+  from {
+    opacity: 0;
+    transform: translateY(64px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hus-vt-pulldown-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(56px) scale(0.985);
+  }
+}
+
+@keyframes hus-vt-pulldown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-48px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Native View Transitions: keep floating header steady, softly glide main page */
+.hus-vt-nav {
+  view-transition-name: hus-nav;
+}
+
+.hus-vt-page {
+  view-transition-name: hus-page;
+}
+
+::view-transition-old(hus-nav),
+::view-transition-new(hus-nav) {
+  animation: none;
+}
+
+::view-transition-old(hus-page) {
+  animation: hus-vt-out 200ms var(--hus-ease) both;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(hus-page) {
+  animation: hus-vt-in 260ms var(--hus-ease) both;
+  mix-blend-mode: normal;
+}
+
+:root[data-vt='pull-up']::view-transition-old(hus-page) {
+  animation: hus-vt-pull-out 340ms var(--hus-ease) both;
+}
+
+:root[data-vt='pull-up']::view-transition-new(hus-page) {
+  animation: hus-vt-pull-in 440ms var(--hus-ease) both;
+}
+
+:root[data-vt='pull-down']::view-transition-old(hus-page) {
+  animation: hus-vt-pulldown-out 340ms var(--hus-ease) both;
+}
+
+:root[data-vt='pull-down']::view-transition-new(hus-page) {
+  animation: hus-vt-pulldown-in 440ms var(--hus-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(hus-page),
+  ::view-transition-new(hus-page) {
+    animation: none !important;
+  }
+}
+
+@keyframes hus-orbital-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes hus-orbital-page-from-right {
+  from {
+    opacity: 0;
+    transform: translate3d(40px, 0, 0) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes hus-orbital-page-from-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-40px, 0, 0) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes hus-slide-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-24px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hus-slide-right {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Chemistry Semi-Essay Interactive Diagram Animations */
+@keyframes hus-mo-electron-drop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes hus-mo-shake-x {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(-4px, 0, 0);
+  }
+  75% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+@keyframes hus-mo-pulse-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes hus-mo-stroke-draw {
+  from {
+    stroke-dashoffset: 420;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@layer components {
+  /* Atmospheric Observatory Display & Page Typography (strict Tailwind steps) */
+  .heading-display {
+    font-family: var(--font-display);
+    font-size: 2.25rem; /* text-4xl */
+    line-height: 1.12;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+    color: var(--hus-ink);
+    text-wrap: balance;
+  }
+
+  @media (min-width: 640px) {
+    .heading-display {
+      font-size: 3rem; /* text-5xl */
+      line-height: 1.08;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .heading-display {
+      font-size: 3.75rem; /* text-6xl */
+      line-height: 1.06;
+    }
+  }
+
+  .heading-tagline {
+    font-family: var(--font-display);
+    font-size: 1.875rem; /* text-3xl */
+    line-height: 1.24;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    color: var(--hus-ink);
+    text-wrap: balance;
+  }
+
+  @media (min-width: 640px) {
+    .heading-tagline {
+      font-size: 2.25rem; /* text-4xl */
+      line-height: 1.2;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .heading-tagline {
+      font-size: 3rem; /* text-5xl */
+      line-height: 1.16;
+    }
+  }
+
+  .heading-page {
+    font-family: var(--font-display);
+    font-size: 1.875rem; /* text-3xl */
+    line-height: 2.25rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--hus-ink);
+    text-wrap: balance;
+  }
+
+  @media (min-width: 640px) {
+    .heading-page {
+      font-size: 2.25rem; /* text-4xl */
+      line-height: 2.5rem;
+    }
+  }
+
+  .heading-section {
+    font-family: var(--font-display);
+    font-size: 1.5rem; /* text-2xl */
+    line-height: 2rem;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--hus-ink);
+  }
+
+  .title-item {
+    font-size: 1rem; /* text-base */
+    line-height: 1.5rem;
+    font-weight: 600;
+    color: var(--hus-ink);
+  }
+
+  /* Hero entrance choreography (runs once on load, visible fallback under reduced motion) */
+  .hus-hero-enter {
+    animation: hus-hero-rise 680ms var(--hus-ease) both;
+  }
+
+  /* GPU-composited gentle vertical float (pure translate3d, zero SVG repaint, zero blur shaders) */
+  .hus-orbit-spin-slow,
+  .hus-orbit-spin-reverse,
+  .hus-star-node {
+    transform-origin: center;
+  }
+
+  .hus-float-node-0 {
+    backface-visibility: hidden;
+    animation: hus-float-a 6.8s ease-in-out infinite;
+  }
+
+  .hus-float-node-1 {
+    backface-visibility: hidden;
+    animation: hus-float-b 7.8s ease-in-out infinite;
+  }
+
+  .hus-float-node-2 {
+    backface-visibility: hidden;
+    animation: hus-float-c 8.6s ease-in-out infinite;
+  }
+
+  [data-stage-paused='true'] .hus-float-node-0,
+  [data-stage-paused='true'] .hus-float-node-1,
+  [data-stage-paused='true'] .hus-float-node-2,
+  .hus-float-node-0:hover,
+  .hus-float-node-1:hover,
+  .hus-float-node-2:hover,
+  .hus-float-node-0:focus-within,
+  .hus-float-node-1:focus-within,
+  .hus-float-node-2:focus-within {
+    animation-play-state: paused;
+  }
+
+  /* Orbital course filter fly-left / fly-right transitions */
+  .hus-orbital-card-enter {
+    animation: hus-orbital-card-in 260ms var(--hus-ease) both;
+  }
+
+  .hus-orbital-page-next {
+    animation: hus-orbital-page-from-right 360ms var(--hus-ease) both;
+  }
+
+  .hus-orbital-page-prev {
+    animation: hus-orbital-page-from-left 360ms var(--hus-ease) both;
+  }
+
+  @media (min-width: 1024px) {
+    .hus-orbital-slot {
+      position: absolute;
+      width: 248px;
+      transform: translate3d(-50%, -50%, 0) scale(1);
+      opacity: 1;
+      transition:
+        left 520ms var(--hus-ease),
+        top 520ms var(--hus-ease),
+        transform 460ms var(--hus-ease),
+        opacity 320ms var(--hus-ease);
+      will-change: transform, opacity;
+    }
+
+    .hus-orbital-slot[data-matched='false'][data-side='left'] {
+      transform: translate3d(calc(-50% - 160px), -50%, 0) scale(0.86);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .hus-orbital-slot[data-matched='false'][data-side='right'] {
+      transform: translate3d(calc(-50% + 160px), -50%, 0) scale(0.86);
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .hus-orbital-slot[data-matched='true'][data-filtered='true'][data-side='left'] {
+      animation: hus-slide-left 360ms var(--hus-ease) both;
+    }
+
+    .hus-orbital-slot[data-matched='true'][data-filtered='true'][data-side='right'] {
+      animation: hus-slide-right 360ms var(--hus-ease) both;
+    }
+  }
+
+  .hus-mo-level-group {
+    transition: transform 420ms var(--hus-ease);
+    will-change: transform;
+  }
+
+  .hus-mo-corr-line {
+    transition: opacity 240ms var(--hus-ease);
+  }
+
+  .hus-mo-electron-in {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: hus-mo-electron-drop 260ms var(--hus-ease) both;
+  }
+
+  .hus-mo-hund-bridge {
+    animation: hus-mo-pulse-glow 750ms ease-in-out infinite;
+  }
+
+  .hus-mo-shake {
+    animation: hus-mo-shake-x 280ms ease-in-out 1;
+  }
+
+  .hus-mo-hint-pulse {
+    animation: hus-mo-pulse-glow 1.2s ease-in-out infinite;
+  }
+
+  .hus-mo-draw-line {
+    stroke-dasharray: 420;
+    stroke-dashoffset: 0;
+    animation: hus-mo-stroke-draw 680ms var(--hus-ease) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hus-hero-enter,
+    .hus-sheet,
+    .hus-sheet-item,
+    .hus-orbit-spin-slow,
+    .hus-orbit-spin-reverse,
+    .hus-star-node,
+    .hus-float-node-0,
+    .hus-float-node-1,
+    .hus-float-node-2,
+    .hus-orbital-slot,
+    .hus-orbital-card-enter,
+    .hus-orbital-page-next,
+    .hus-orbital-page-prev,
+    .hus-mo-level-group,
+    .hus-mo-electron-in,
+    .hus-mo-hund-bridge,
+    .hus-mo-shake,
+    .hus-mo-hint-pulse,
+    .hus-mo-draw-line {
+      animation: none !important;
+      transition: none !important;
+      opacity: 1 !important;
+    }
+
+    .hus-orbital-slot[data-matched='false'] {
+      opacity: 0 !important;
+    }
+  }
+
+  /* Interactive button primitives with weighted easing & tactile press */
+  .hus-btn {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-md);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition:
+      background-color 260ms var(--hus-ease),
+      border-color 260ms var(--hus-ease),
+      color 260ms var(--hus-ease),
+      box-shadow 260ms var(--hus-ease),
+      transform 220ms var(--hus-ease);
+  }
+
+  .hus-btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .hus-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .hus-btn-primary {
+    background-color: var(--hus-accent-solid);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgb(26 86 219 / 0.22), 0 8px 20px -10px rgb(26 86 219 / 0.42);
+  }
+
+  .hus-btn-primary:hover:not(:disabled) {
+    background-color: var(--hus-accent-solid-hover);
+    transform: translateY(-1px);
+  }
+
+  .hus-btn-secondary {
+    border: 1px solid var(--hus-border);
+    background-color: var(--hus-surface);
+    color: var(--hus-ink);
+  }
+
+  .hus-btn-secondary:hover:not(:disabled) {
+    border-color: var(--hus-border-strong);
+    background-color: var(--hus-surface-subtle);
+  }
+
+  .hus-btn-ghost {
+    color: var(--hus-ink-secondary);
+  }
+
+  .hus-btn-ghost:hover:not(:disabled) {
+    background-color: var(--hus-surface-subtle);
+    color: var(--hus-ink);
+  }
+
+  /* Header & mobile sheet motion */
+  .hus-header-bar {
+    box-shadow: var(--hus-shadow-nav);
+  }
+
+  .hus-card-surface {
+    box-shadow: var(--hus-shadow-card);
+  }
+
+  .hus-sheet {
+    box-shadow: var(--hus-shadow-sheet);
+    animation: hus-sheet-in 320ms var(--hus-ease) both;
+  }
+
+  .hus-gesture-pill {
+    animation: hus-sheet-in 240ms var(--hus-ease) both;
+  }
+
+  .hus-sheet-item {
+    animation: hus-link-rise 360ms var(--hus-ease) both;
+  }
+
+  .hus-skeleton {
+    border-radius: var(--radius-md);
+    background-color: var(--hus-surface-subtle);
+    animation: hus-pulse-soft 1.5s var(--hus-ease) infinite;
+  }
+
+  .skip-link {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    z-index: 60;
+    padding: 0.5rem 0.875rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--hus-border-strong);
+    background: var(--hus-surface);
+    color: var(--hus-ink);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: var(--hus-shadow-nav);
+  }
+
+  .skip-link:focus {
+    top: 0.75rem;
+    left: 0.75rem;
+  }
+
+  /* Academic reading typography — calm Read mode, snapped to Tailwind scale */
+  .academic-prose {
+    font-size: var(--hus-reading-scale);
+    line-height: var(--hus-reading-leading);
+    color: var(--hus-ink);
+    max-width: 66ch;
+    overflow-wrap: anywhere;
+  }
+
+  .academic-prose h1 {
+    font-family: var(--font-display);
+    margin-top: 0;
+    margin-bottom: 1.25rem;
+    font-size: 1.5rem; /* text-2xl */
+    line-height: 2rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--hus-ink);
+  }
+
+  @media (min-width: 640px) {
+    .academic-prose h1 {
+      font-size: 1.875rem; /* text-3xl */
+      line-height: 2.25rem;
+    }
+  }
+
+  .academic-prose h2 {
+    font-family: var(--font-display);
+    margin-top: 2.25rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.25rem; /* text-xl */
+    line-height: 1.75rem;
+    font-weight: 500;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--hus-border);
+    scroll-margin-top: 5.5rem;
+  }
+
+  .academic-prose h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.125rem; /* text-lg */
+    line-height: 1.75rem;
+    font-weight: 600;
+    scroll-margin-top: 5.5rem;
+  }
+
+  .academic-prose p {
+    margin-block: 1rem;
+    color: var(--hus-ink-secondary);
+  }
+
+  .academic-prose strong {
+    color: var(--hus-ink);
+    font-weight: 600;
+  }
+
+  .academic-prose em {
+    font-style: normal;
+    color: var(--hus-ink);
+    font-weight: 500;
+  }
+
+  .academic-prose ul,
+  .academic-prose ol {
+    margin-block: 1rem;
+    padding-left: 1.5rem;
+    color: var(--hus-ink-secondary);
+  }
+
+  .academic-prose ul {
+    list-style-type: disc;
+  }
+
+  .academic-prose ol {
+    list-style-type: decimal;
+  }
+
+  .academic-prose li {
+    margin-block: 0.5rem;
+  }
+
+  .academic-prose a {
+    color: var(--hus-accent);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1px;
+  }
+
+  .academic-prose a:hover {
+    color: var(--hus-accent-hover);
+  }
+
+  .academic-prose blockquote {
+    margin-block: 1.5rem;
+    padding: 0.875rem 1.125rem;
+    border: 1px solid var(--hus-border);
+    border-radius: var(--radius-md);
+    background: var(--hus-surface-subtle);
+    color: var(--hus-ink-secondary);
+  }
+
+  .academic-prose blockquote > :first-child {
+    margin-top: 0;
+  }
+
+  .academic-prose blockquote > :last-child {
+    margin-bottom: 0;
+  }
+
+  .academic-prose hr {
+    margin-block: 2rem;
+    border: 0;
+    border-top: 1px solid var(--hus-border);
+  }
+
+  .academic-prose :not(pre) > code {
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--hus-border);
+    background: var(--hus-surface-subtle);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: var(--hus-ink);
+  }
+
+  .academic-prose pre,
+  .academic-prose .math-display {
+    overflow-x: auto;
+    max-width: 100%;
+    padding: 1rem;
+    margin-block: 1.25rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--hus-border);
+    background: var(--hus-surface-subtle);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .academic-prose .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    padding-block: 0.75rem;
+    margin-block: 1.25rem;
+  }
+
+  .academic-prose .katex {
+    font-size: 1.04em;
+  }
+
+  .hljs-keyword, .hljs-built_in, .hljs-title { color: var(--hus-accent); }
+  .hljs-string, .hljs-number, .hljs-literal { color: var(--hus-success); }
+  .hljs-comment { color: var(--hus-ink-muted); }
+
+  .academic-prose .table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    margin-block: 1.25rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--hus-border);
+  }
+
+  .academic-prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .academic-prose th,
+  .academic-prose td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--hus-border);
+    text-align: left;
+  }
+
+  .academic-prose tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .academic-prose th {
+    background: var(--hus-surface-subtle);
+    font-weight: 600;
+    color: var(--hus-ink);
+  }
+
+  .search-mark {
+    border-radius: 0.25rem;
+    background: var(--hus-accent-subtle);
+    color: var(--hus-accent-ink);
+    padding-inline: 0.1875rem;
+    font-weight: 600;
+  }
+
+  .hus-progress {
+    appearance: none;
+    height: 0.5rem;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: var(--hus-surface-subtle);
+    border: 1px solid var(--hus-border);
+  }
+
+  .hus-progress::-webkit-progress-bar {
+    background: var(--hus-surface-subtle);
+    border-radius: 9999px;
+  }
+
+  .hus-progress::-webkit-progress-value {
+    background: var(--hus-accent);
+    border-radius: 9999px;
+    transition: width 300ms var(--hus-ease);
+  }
+
+  .hus-progress::-moz-progress-bar {
+    background: var(--hus-accent);
+    border-radius: 9999px;
+  }
+}
+
+@keyframes hus-beacon-nudge {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3px, 0, 0) scale(1.06);
+  }
+}
+
+@keyframes hus-starlight-spark {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--hus-dx, 0px), var(--hus-dy, -40px), 0) scale(0.18);
+  }
+}
+
+@keyframes hus-cosmic-fly-out {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--hus-origin-x, 0px), var(--hus-origin-y, -36px), 0) scale(0.32);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes hus-cosmic-card-settle {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes hus-content-swap {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hus-panel-enter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hus-constellation-opacity {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.hus-beacon-hand {
+  animation: hus-beacon-nudge 900ms var(--hus-ease) 2;
+}
+
+.hus-starlight-spark {
+  position: absolute;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  opacity: 0;
+  animation: hus-starlight-spark 720ms var(--hus-ease) forwards;
+}
+
+.hus-cosmic-fly-card {
+  opacity: 0;
+  animation: hus-cosmic-fly-out 460ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.hus-cosmic-card-settle {
+  backface-visibility: hidden;
+  animation: hus-cosmic-card-settle 280ms var(--hus-ease) both;
+}
+
+.hus-content-swap {
+  backface-visibility: hidden;
+  animation: hus-content-swap 220ms var(--hus-ease) both;
+}
+
+.hus-panel-enter {
+  backface-visibility: hidden;
+  animation: hus-panel-enter 280ms var(--hus-ease) both;
+}
+
+/* Lightweight GPU-composited levitation (pure translate3d only — zero rotate, zero filter:blur, zero backdrop-blur, auto-paused offscreen) */
+@keyframes hus-levitate-pure-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(3px, -9px, 0);
+  }
+}
+
+@keyframes hus-levitate-pure-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-4px, 8px, 0);
+  }
+}
+
+@keyframes hus-levitate-pure-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(4px, 7px, 0);
+  }
+}
+
+.hus-cosmic-float-0 {
+  contain: layout style paint;
+  backface-visibility: hidden;
+  animation: hus-levitate-pure-a 6.6s ease-in-out infinite;
+}
+
+.hus-cosmic-float-1 {
+  contain: layout style paint;
+  backface-visibility: hidden;
+  animation: hus-levitate-pure-b 7.6s ease-in-out infinite;
+}
+
+.hus-cosmic-float-2 {
+  contain: layout style paint;
+  backface-visibility: hidden;
+  animation: hus-levitate-pure-c 8.4s ease-in-out infinite;
+}
+
+[data-stage-paused='true'] .hus-cosmic-float-0,
+[data-stage-paused='true'] .hus-cosmic-float-1,
+[data-stage-paused='true'] .hus-cosmic-float-2,
+.hus-cosmic-float-0:hover,
+.hus-cosmic-float-1:hover,
+.hus-cosmic-float-2:hover,
+.hus-cosmic-float-0:focus-within,
+.hus-cosmic-float-1:focus-within,
+.hus-cosmic-float-2:focus-within {
+  animation-play-state: paused;
+}
+
+.hus-cosmic-depth-far {
+  opacity: 0.86;
+}
+
+.hus-cosmic-depth-mid {
+  opacity: 0.97;
+}
+
+.hus-cosmic-depth-far:hover,
+.hus-cosmic-depth-far:focus-visible,
+.hus-cosmic-depth-mid:hover,
+.hus-cosmic-depth-mid:focus-visible {
+  opacity: 1;
+  z-index: 30;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hus-beacon-hand,
+  .hus-cosmic-fly-card,
+  .hus-cosmic-card-settle,
+  .hus-content-swap,
+  .hus-panel-enter,
+  .hus-cosmic-float-0,
+  .hus-cosmic-float-1,
+  .hus-cosmic-float-2,
+  .hus-cosmic-depth-far,
+  .hus-cosmic-depth-mid {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .hus-starlight-spark {
+    display: none !important;
+  }
+}
+
+/* Observatory Canvas: GPU-composited orbiting electrons & upper-sky celestial stars */
+@keyframes hus-electron-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hus-sky-star-drift {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translate3d(-18px, -4px, 0);
+  }
+  50% {
+    opacity: 0.95;
+    transform: translate3d(18px, 5px, 0);
+  }
+}
+
+@keyframes hus-shooting-star {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(16deg);
+  }
+  4% {
+    opacity: 0.9;
+  }
+  18% {
+    opacity: 0;
+    transform: translate3d(220px, 62px, 0) rotate(16deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(220px, 62px, 0) rotate(16deg);
+  }
+}
+
+.hus-electron-ring {
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: var(--orbit-size);
+  height: var(--orbit-size);
+  transform: translate(-50%, -50%) rotate(var(--orbit-tilt)) scaleY(0.38);
+  pointer-events: none;
+}
+
+.hus-electron-rotor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+  backface-visibility: hidden;
+  animation: hus-electron-orbit var(--orbit-dur, 24s) linear infinite;
+}
+
+.hus-electron-carrier {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%) scaleY(2.63);
+  pointer-events: none;
+}
+
+.hus-electron-orb {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  backface-visibility: hidden;
+}
+
+.hus-electron-orb-accent {
+  background-color: var(--hus-accent);
+  box-shadow: 0 0 0 4px var(--hus-glow-core), 0 0 10px var(--hus-accent);
+}
+
+.hus-electron-orb-starlight {
+  background-color: var(--hus-starlight);
+  box-shadow: 0 0 0 4px var(--hus-glow-warm), 0 0 10px var(--hus-starlight);
+}
+
+.hus-sky-star {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  backface-visibility: hidden;
+  animation: hus-sky-star-drift var(--star-dur, 11s) ease-in-out infinite;
+}
+
+.hus-shooting-star {
+  position: absolute;
+  width: 68px;
+  height: 1.5px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, var(--hus-starlight), var(--hus-accent));
+  opacity: 0;
+  pointer-events: none;
+  backface-visibility: hidden;
+  animation: hus-shooting-star 11s ease-out infinite;
+}
+
+[data-sky-paused='true'] * {
+  animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hus-electron-rotor,
+  .hus-sky-star,
+  .hus-shooting-star {
+    animation: none !important;
+  }
+
+  .hus-sky-star {
+    opacity: 0.75 !important;
+  }
+
+  .hus-shooting-star {
+    opacity: 0 !important;
+  }
+}
+
+.hus-observatory-root {
+  --hus-active-core: var(--hus-backdrop-light-core, var(--hus-glow-core));
+  --hus-active-warm: var(--hus-backdrop-light-warm, var(--hus-glow-warm));
+}
+
+:root[data-theme='dark'] .hus-observatory-root {
+  --hus-active-core: var(--hus-backdrop-dark-core, var(--hus-glow-core));
+  --hus-active-warm: var(--hus-backdrop-dark-warm, var(--hus-glow-warm));
+}
+
+.hus-parallax-far {
+  transform: translate3d(calc(var(--hus-px, 0) * -6px), calc(var(--hus-py, 0) * -4px), 0);
+  transition: transform 220ms ease-out;
+  will-change: transform;
+}
+
+.hus-parallax-near {
+  transform: translate3d(calc(var(--hus-px, 0) * 10px), calc(var(--hus-py, 0) * 7px), 0);
+  transition: transform 220ms ease-out;
+  will-change: transform;
+}
+
+.hus-observatory-stop {
+  transition: stop-color 380ms var(--hus-ease);
+}
+
+.hus-constellation-fade {
+  animation: hus-constellation-opacity 340ms var(--hus-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hus-parallax-far,
+  .hus-parallax-near,
+  .hus-observatory-stop,
+  .hus-constellation-fade {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+.hus-math-key .katex {
+  font-size: 0.92em;
+  line-height: 1.1;
+}
+.hus-math-key .katex-html {
+  display: inline-flex;
+  align-items: center;
+}

@@ -1,0 +1,31 @@
+# Dependencies & build outputs
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Documentation, reference projects & academic archives (not deployed)
+docs/
+
+# Agent/tooling configs & local caches
+.agents/
+.claude/
+.codex/
+.github/
+.impeccable/
+.superpowers/
+skills-lock.json
+
+# Test & coverage artifacts
+playwright-report/
+test-results/
+coverage/
+
+# Local environment, editor & OS files
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

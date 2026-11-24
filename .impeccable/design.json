@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "world": "atmospheric-observatory",
+  "fonts": {
+    "display": "Spectral",
+    "sans": "Be Vietnam Pro",
+    "mono": "ui-monospace"
+  },
+  "tokens": {
+    "light": {
+      "canvas": "#f7f9fc",
+      "surface": "#ffffff",
+      "surfaceSubtle": "#eef3f9",
+      "border": "#dfe6f0",
+      "borderStrong": "#c6d3e3",
+      "ink": "#0e1726",
+      "inkSecondary": "#38475e",
+      "inkMuted": "#586980",
+      "accent": "#1a56db",
+      "accentSolid": "#1a56db",
+      "starlight": "#b07a22"
+    },
+    "dark": {
+      "canvas": "#090e18",
+      "surface": "#101726",
+      "surfaceSubtle": "#162033",
+      "border": "#1f2d45",
+      "borderStrong": "#2f4263",
+      "ink": "#eef2f8",
+      "inkSecondary": "#b6c3d7",
+      "inkMuted": "#8596b0",
+      "accent": "#7cb3ff",
+      "accentSolid": "#2563eb",
+      "starlight": "#e4bc6a"
+    }
+  },
+  "easing": "cubic-bezier(0.22, 1, 0.36, 1)"
+}

@@ -1,0 +1,48 @@
+# Dependencies & build outputs
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Test & coverage artifacts
+playwright-report/
+test-results/
+coverage/
+
+# Local environment & logs
+.env
+.env.local
+.env.*.local
+.vercel
+*.log
+npm-debug.log*
+
+# Local reference & academic source archives (kept locally, not committed)
+docs/Chemistry/
+docs/DSA-HUS/
+docs/HUS-learning-resource/
+docs/5.111sc-fall-2014/
+docs/5.112-fall-2005/
+docs/5.60-spring-2008/
+docs/8.01sc-fall-2016/
+docs/8.044-spring-2013/
+docs/MIT_additional_physics/
+docs/*.pdf
+docs/VLDC-HUS/
+
+# Local tool caches, review screenshots & personal settings
+.superpowers/
+.impeccable/review/
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.claude/settings.local.json
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+.vercel
+.env*
