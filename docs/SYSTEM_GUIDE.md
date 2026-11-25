@@ -56,6 +56,7 @@ Nguyên tắc ranh giới bắt buộc:
 - **`src/domain/`** và **`src/core/`** hoàn toàn **không import React, DOM hay API trình duyệt** — dễ kiểm thử bằng Vitest thuần Node.js.
 - **`src/pages/`** và **`src/components/`** chỉ hiển thị dữ liệu và ủy quyền tính toán cho `src/core/`; **không bao giờ rẽ nhánh theo tên môn học** (mọi công cụ chuyên biệt được gắn thông qua hợp đồng `SubjectModule`).
 - **`src/modules/`** được tải động (`lazy-load`) để giữ gói JS chính gọn nhẹ.
+- **Chính sách AI & WebMCP (cấm vĩnh viễn Local Prompt API & BYOK):** Hệ thống chỉ giao tiếp với trợ giảng AI thông qua tài khoản Google sẵn có của người dùng trên trình duyệt (`document.modelContext` WebMCP, thanh bên Ask Gemini kèm đồng bộ JSON, và xuất sổ tay `.md` cho NotebookLM). **Loại bỏ vĩnh viễn, tuyệt đối không đề xuất hay triển khai** (cả trên website lẫn tiện ích mở rộng đi kèm): (1) AI chạy cục bộ trong trình duyệt (*Gemini Nano / Chrome Prompt API `LanguageModel`*), và (2) cơ chế bắt sinh viên tự tạo/dán khóa API cá nhân từ Google AI Studio (*BYOK lưu trong `localStorage` hoặc `chrome.storage.local`*).
 
 ---
 

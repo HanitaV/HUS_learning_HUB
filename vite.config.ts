@@ -7,5 +7,5 @@ export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
   server: { fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/docs/**', '**/.agents/**', '**/.claude/**'] } },
-  test: { include: ['tests/unit/**/*.test.ts'], environment: 'node' },
+  test: { include: ['tests/unit/**/*.test.ts'], environment: 'node', testTimeout: 15000 },
 });

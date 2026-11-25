@@ -294,15 +294,16 @@ export function WebMcpOnboardingModal({ open, onClose }: WebMcpOnboardingModalPr
                   <code className="font-mono text-[11px]">\</code>, LaTeX và sơ đồ chuyên ngành).
                 </li>
                 <li>
-                  <strong className="text-ink">Bước 2 — Gọi ✨ Ask Gemini trên Chrome:</strong> Bấm
-                  biểu tượng Gemini ở góc trên bên phải Chrome, nhắn{' '}
-                  <em>«Gợi mở Socratic bước này theo giáo trình ĐHKHTN»</em> hoặc{' '}
-                  <em>«Rà soát bài nháp theo rubric»</em>.
+                  <strong className="text-ink">Bước 2 — Dán Prompt Kép vào ✨ Ask Gemini:</strong>{' '}
+                  Nhấn <em>«Gợi mở Socratic»</em> hoặc <em>«Kiểm tra trình bày»</em> rồi dán vào
+                  thanh bên Gemini trên Chrome (tối ưu cho gói <strong>Google AI Pro .edu.vn</strong>).
+                  Lệnh tự thích ứng để không bao giờ báo lỗi thiếu quyền và không lộ đáp án.
                 </li>
                 <li>
-                  <strong className="text-ink">Bước 3 — Nhận gợi ý trực tiếp trên bài:</strong>{' '}
-                  Gemini tự động đẩy câu hỏi gợi mở, cảnh báo điều kiện/ký hiệu và trạng thái từng
-                  tiêu chí thẳng vào khung bài làm để bạn tự sửa bài (không chép sẵn lời giải).
+                  <strong className="text-ink">Bước 3 — Đồng bộ 1-Click lên giấy A4:</strong>{' '}
+                  Nếu WebMCP đẩy trực tiếp hoặc bạn bấm Copy câu trả lời rồi nhấn{' '}
+                  <em>«Nhập từ Gemini»</em>, toàn bộ câu hỏi gợi mở, cảnh báo ký hiệu và trạng thái
+                  Rubric sẽ hiện thẳng trên tờ giấy A4.
                 </li>
               </ol>
             </section>

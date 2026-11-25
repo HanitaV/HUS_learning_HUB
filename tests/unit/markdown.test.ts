@@ -14,9 +14,10 @@ it('renders math and highlighted code while refusing executable HTML and URLs', 
   expect(html).toContain('href="/courses/phy1159"');
 });
 
-it('renders GFM tables inside a scrollable wrapper', () => {
+it('renders GFM tables inside a scrollable wrapper with hus-markdown scope', () => {
   const source = '| Hạt | Điện tích |\n|---|---|\n| Proton | +1 |\n| Electron | -1 |';
   const html = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(Markdown, { children: source })));
+  expect(html).toContain('class="hus-markdown"');
   expect(html).toContain('class="table-scroll"');
   expect(html).toContain('<table>');
   expect(html).toContain('<td>Proton</td>');

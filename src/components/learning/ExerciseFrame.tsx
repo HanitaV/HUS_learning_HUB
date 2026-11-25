@@ -1,12 +1,11 @@
 import { useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { MathSymbol, MathSymbolContext, MathSymbolInsertMode } from '../../domain/math-symbols';
+import type { ProblemFigureSpec } from '../../domain/problem-figure';
 import { useMathSymbolPreferences } from '../../app/useMathSymbolPreferences';
 import {
   applyShorthandSuggestion,
   detectActiveBackslashQuery,
   filterShorthandSuggestions,
-  renderTextByMathMode,
-  shouldAutoShowMathPreview,
   type ActiveBackslashQuery,
   type MathShorthandEntry,
 } from '../../core/learning/math-shorthand';
@@ -16,6 +15,8 @@ import { AlertCircleIcon, CheckCircleIcon, PlayIcon, RotateCcwIcon } from '../ui
 import Markdown from './Markdown';
 import { MathSlashAutocomplete } from './MathSlashAutocomplete';
 import { MathSymbolToolbar } from './MathSymbolToolbar';
+import { ProblemFigure } from './ProblemFigure';
+import { RealtimeMathPreview } from './RealtimeMathPreview';
 
 export type ExercisePresentationKind =
   | 'multiple-choice'
@@ -38,6 +39,7 @@ export interface ExerciseFrameProps {
   readonly title: string;
   readonly kind: ExercisePresentationKind;
   readonly prompt: ReactNode;
+  readonly figure?: ProblemFigureSpec | undefined;
   readonly choices?: readonly ExerciseChoice[];
   readonly unit?: string;
   readonly hints?: readonly string[];
@@ -72,6 +74,7 @@ export function ExerciseFrame({
   title,
   kind,
   prompt,
+  figure,
   choices = [],
   unit,
   hints = [],
@@ -241,8 +244,9 @@ export function ExerciseFrame({
       </div>
 
       {/* Question area */}
-      <div className="mt-4 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3.5 text-sm leading-relaxed text-ink [&>p:first-child]:!mt-0 [&>p:last-child]:!mb-0">
-        {prompt}
+      <div className="mt-4 space-y-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3.5 text-sm leading-relaxed text-ink [&>p:first-child]:!mt-0 [&>p:last-child]:!mb-0">
+        <div>{prompt}</div>
+        {figure ? <ProblemFigure figure={figure} /> : null}
       </div>
 
       {onLoadCodeSnippet ? (
@@ -353,10 +357,10 @@ export function ExerciseFrame({
                   onClose={() => setSlashState(null)}
                 />
               ) : null}
-              {kind !== 'numerical' && shouldAutoShowMathPreview(answer, activeMathMode) ? (
+              {kind !== 'numerical' && answer.trim().length > 0 ? (
                 <div className="rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-1.5 text-xs text-ink">
                   <span className="mr-2 text-ink-muted">Xem trước:</span>
-                  <Markdown inline>{renderTextByMathMode(answer, activeMathMode)}</Markdown>
+                  <RealtimeMathPreview value={answer} mode={activeMathMode} inline />
                 </div>
               ) : null}
               <MathSymbolToolbar

@@ -14,7 +14,12 @@ import {
 } from '../../infrastructure/preferences/notice';
 import { groupCoursesBySubject } from '../../core/courses/search';
 import { courseRegistry, subjectList } from '../../infrastructure/content/catalogue';
-import { navigateSmooth, preloadCataloguePage, preloadCoursesPage } from '../route-transition';
+import {
+  navigateSmooth,
+  preloadCataloguePage,
+  preloadCoursesPage,
+  preloadExamPracticePage,
+} from '../route-transition';
 import { useWorkspaceGestures } from '../useWorkspaceGestures';
 import { useWorkspacePreferences } from '../useWorkspacePreferences';
 import { WebMcpGuideContext } from '../WebMcpGuideContext';
@@ -22,6 +27,7 @@ import {
   AlertCircleIcon,
   BookOpenIcon,
   ChartBarIcon,
+  ClipboardCheckIcon,
   CloseIcon,
   FolderIcon,
   HomeIcon,
@@ -35,6 +41,7 @@ import {
 const PRIMARY_NAV = [
   { to: '/', label: 'Tổng quan', icon: HomeIcon, end: true },
   { to: '/courses', label: 'Học phần', icon: BookOpenIcon, end: false },
+  { to: '/exams', label: 'Luyện đề', icon: ClipboardCheckIcon, end: false },
   { to: '/progress', label: 'Tiến độ', icon: ChartBarIcon, end: false },
 ] as const;
 
@@ -222,6 +229,7 @@ export function AppLayout() {
   }, [pathname, search]);
 
   const isLessonRoute = pathname.includes('/lessons/');
+  const isChapterExamRoute = /\/chapters\/[^/]+\/exam\/?$/.test(pathname);
   const isLandingRoute = pathname === '/';
   const containerWidth = isLessonRoute ? 'max-w-7xl' : 'max-w-6xl';
 
@@ -274,61 +282,68 @@ export function AppLayout() {
 
               <nav aria-label="Điều hướng chính" className="hidden items-center gap-1 lg:flex">
                 {PRIMARY_NAV.map(item => {
+                  const Icon = item.icon;
                   const preloadTarget =
                     item.to === '/courses'
                       ? preloadCoursesPage
-                      : item.to === '/'
-                        ? preloadCataloguePage
-                        : undefined;
+                      : item.to === '/exams'
+                        ? preloadExamPracticePage
+                        : item.to === '/'
+                          ? preloadCataloguePage
+                          : undefined;
                   return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    onMouseEnter={preloadTarget ? () => void preloadTarget() : undefined}
-                    onFocus={preloadTarget ? () => void preloadTarget() : undefined}
-                    onClick={
-                      preloadTarget
-                        ? event => {
-                            if (
-                              event.metaKey ||
-                              event.ctrlKey ||
-                              event.shiftKey ||
-                              event.altKey ||
-                              event.button !== 0 ||
-                              pathname === item.to
-                            ) {
-                              return;
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      onMouseEnter={preloadTarget ? () => void preloadTarget() : undefined}
+                      onFocus={preloadTarget ? () => void preloadTarget() : undefined}
+                      onClick={
+                        preloadTarget
+                          ? event => {
+                              if (
+                                event.metaKey ||
+                                event.ctrlKey ||
+                                event.shiftKey ||
+                                event.altKey ||
+                                event.button !== 0 ||
+                                pathname === item.to
+                              ) {
+                                return;
+                              }
+                              event.preventDefault();
+                              void navigateSmooth(navigate, item.to, preloadTarget);
                             }
-                            event.preventDefault();
-                            void navigateSmooth(navigate, item.to, preloadTarget);
-                          }
-                        : undefined
-                    }
-                    className={({ isActive }) => {
-                      const highlight =
-                        isActive && !(item.to === '/courses' && activeSubjectParam !== null);
-                      return `inline-flex min-h-[36px] items-center rounded-[var(--radius-md)] px-3 py-1.5 text-sm font-medium no-underline transition-colors duration-300 ease-[var(--hus-ease)] ${
-                        highlight
-                          ? 'bg-accent-subtle text-accent-ink'
-                          : 'text-ink-secondary hover:bg-surface-subtle hover:text-ink'
-                      }`;
-                    }}
-                  >
-                    {item.label}
-                  </NavLink>
+                          : undefined
+                      }
+                      className={({ isActive }) => {
+                        const highlight =
+                          item.to === '/exams'
+                            ? isActive || isChapterExamRoute
+                            : isActive &&
+                              !(item.to === '/courses' && (activeSubjectParam !== null || isChapterExamRoute));
+                        return `inline-flex min-h-[36px] items-center gap-1.5 rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium no-underline transition-colors duration-300 ease-[var(--hus-ease)] ${
+                          highlight
+                            ? 'bg-accent-subtle text-accent-ink'
+                            : 'text-ink-secondary hover:bg-surface-subtle hover:text-ink'
+                        }`;
+                      }}
+                    >
+                      <Icon width={15} height={15} className="hidden shrink-0 xl:block" />
+                      <span>{item.label}</span>
+                    </NavLink>
                   );
                 })}
               </nav>
             </div>
 
             {/* Right: Search + Utilities */}
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <form
                 onSubmit={handleGlobalSearch}
                 role="search"
                 aria-label="Tìm kiếm học phần"
-                className="relative hidden w-52 md:block xl:w-64"
+                className="relative hidden w-44 md:block lg:w-48 xl:w-60"
               >
                 <SearchIcon
                   width={15}
@@ -518,7 +533,10 @@ export function AppLayout() {
                       style={{ animationDelay: `${Math.min(index * 60, 300)}ms` }}
                       className={({ isActive }) => {
                         const highlight =
-                          isActive && !(item.to === '/courses' && activeSubjectParam !== null);
+                          item.to === '/exams'
+                            ? isActive || isChapterExamRoute
+                            : isActive &&
+                              !(item.to === '/courses' && (activeSubjectParam !== null || isChapterExamRoute));
                         return `hus-sheet-item flex min-h-[48px] items-center gap-3 rounded-[var(--radius-md)] px-3.5 py-2.5 text-base font-medium no-underline transition-colors ${
                           highlight
                             ? 'bg-accent-subtle text-accent-ink'
@@ -614,25 +632,23 @@ export function AppLayout() {
       ) : null}
 
       {/* Restrained Atmospheric Observatory footer */}
-      <footer className="mt-12 border-t border-border bg-surface/60">
+      <footer className="mt-10 border-t border-border bg-surface/55">
         <div
-          className={`mx-auto flex w-full flex-col gap-5 px-4 py-8 text-xs text-ink-muted sm:px-6 ${containerWidth}`}
+          className={`mx-auto flex w-full flex-col gap-3 px-4 py-6 text-xs text-ink-muted sm:px-6 ${containerWidth}`}
         >
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <p className="font-medium text-ink">
-                HUS Learning Hub · Trường Đại học Khoa học Tự nhiên, ĐHQGHN
-              </p>
-              <p>
-                Nền tảng học tập tĩnh, lưu tiến độ cục bộ trên trình duyệt và minh bạch nguồn gốc học liệu.
-              </p>
-            </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="font-medium text-ink">
+              HUS Learning Hub · Trường Đại học Khoa học Tự nhiên, ĐHQGHN
+            </p>
             <nav
               aria-label="Điều hướng chân trang"
-              className="flex flex-wrap items-center gap-x-6 gap-y-2"
+              className="flex flex-wrap items-center gap-x-5 gap-y-1.5"
             >
               <Link to="/courses" className="text-ink-secondary no-underline hover:text-ink hover:underline">
                 Học phần
+              </Link>
+              <Link to="/exams" className="text-ink-secondary no-underline hover:text-ink hover:underline">
+                Luyện đề
               </Link>
               <Link to="/progress" className="text-ink-secondary no-underline hover:text-ink hover:underline">
                 Tiến độ
@@ -642,9 +658,8 @@ export function AppLayout() {
               </Link>
             </nav>
           </div>
-          <p className="border-t border-border/70 pt-3.5 text-[11px] leading-relaxed text-ink-muted/85">
-            Lưu ý: Toàn bộ nội dung trên trang không phải tài liệu chính thức mà được tổng hợp từ
-            nhiều nguồn tham khảo, không thể thay thế giảng viên trên lớp và giáo trình.
+          <p className="text-[11px] leading-relaxed text-ink-muted/85">
+            Lưu ý: Học liệu tổng hợp tham khảo (không phải tài liệu chính thức), không thể thay thế giảng viên trên lớp và giáo trình.
           </p>
         </div>
       </footer>

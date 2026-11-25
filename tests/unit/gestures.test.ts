@@ -13,11 +13,15 @@ describe('workspace gesture routing and two-step confirmation', () => {
     });
     expect(resolveBoundaryTargets('/courses')).toEqual({
       top: { to: '/', label: 'Tổng quan' },
+      bottom: { to: '/exams', label: 'Luyện đề' },
+    });
+    expect(resolveBoundaryTargets('/exams')).toEqual({
+      top: { to: '/courses', label: 'Học phần' },
       bottom: { to: '/progress', label: 'Tiến độ' },
     });
     expect(resolveBoundaryTargets('/resources')).toEqual({});
     expect(resolveBoundaryTargets('/progress')).toEqual({
-      top: { to: '/courses', label: 'Học phần' },
+      top: { to: '/exams', label: 'Luyện đề' },
       bottom: { to: '/settings', label: 'Cài đặt' },
     });
     expect(resolveBoundaryTargets('/settings')).toEqual({

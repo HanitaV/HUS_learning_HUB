@@ -29,6 +29,7 @@ export const BOUNDARY_CONFIRM_MIN_GAP_MS = 260;
 const PRIMARY_ROUTE_CHAIN: readonly RouteGestureTarget[] = [
   { to: '/', label: 'Tổng quan' },
   { to: '/courses', label: 'Học phần' },
+  { to: '/exams', label: 'Luyện đề' },
   { to: '/progress', label: 'Tiến độ' },
   { to: '/settings', label: 'Cài đặt' },
 ];

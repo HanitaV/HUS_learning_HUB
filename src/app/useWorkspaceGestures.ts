@@ -8,7 +8,12 @@ import {
   type BoundaryEdge,
   type RouteGestureTarget,
 } from '../core/navigation/gestures';
-import { navigateSmooth, preloadCataloguePage, preloadCoursesPage } from './route-transition';
+import {
+  navigateSmooth,
+  preloadCataloguePage,
+  preloadCoursesPage,
+  preloadExamPracticePage,
+} from './route-transition';
 
 export interface ArmedBoundaryPrompt {
   readonly edge: BoundaryEdge;
@@ -24,6 +29,7 @@ export interface UseWorkspaceGesturesOptions {
 function getPreloaderForRoute(to: string): (() => Promise<unknown>) | undefined {
   if (to === '/') return preloadCataloguePage;
   if (to === '/courses') return preloadCoursesPage;
+  if (to === '/exams') return preloadExamPracticePage;
   return undefined;
 }
 

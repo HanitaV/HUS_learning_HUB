@@ -77,7 +77,9 @@
       var(--hus-paper-rule) var(--hus-a4-line)
     );
   background-position: 0 0, 0 0.35rem;
+  background-size: 100% 100%, 100% var(--hus-a4-line);
   background-attachment: local;
+  contain: layout style;
   color: var(--hus-ink);
   font-family: var(--font-sans);
   font-size: 0.9375rem;
@@ -100,6 +102,7 @@
   background: var(--hus-paper-preview);
   border-bottom-left-radius: calc(var(--radius-lg) - 1px);
   border-bottom-right-radius: calc(var(--radius-lg) - 1px);
+  contain: content;
 }
 
 .written-practice-input {

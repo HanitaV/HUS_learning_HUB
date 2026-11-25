@@ -2,9 +2,18 @@ import { useMemo, useState } from 'react';
 import type { DiagramRendererProps } from '../../contracts/diagram-module';
 import type { AlgoTraceCellSpec, AlgoTraceStepSpec } from '../../domain/semi-essay';
 import { gradeAlgoTraceStep, type AlgoTraceGradeResult } from '../../core/learning/hybrid-diagrams';
+import {
+  isStringRecord,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
-export default function AlgoTraceDiagram({ spec, completed, onEvaluated }: DiagramRendererProps) {
+export default function AlgoTraceDiagram({
+  spec,
+  completed,
+  draftKey,
+  onEvaluated,
+}: DiagramRendererProps) {
   const traceSpec = spec as AlgoTraceStepSpec;
 
   const cellMap = useMemo(() => {
@@ -15,19 +24,23 @@ export default function AlgoTraceDiagram({ spec, completed, onEvaluated }: Diagr
     return map;
   }, [traceSpec.cells]);
 
-  const [values, setValues] = useState<Readonly<Record<string, string>>>(() => {
-    if (!completed) return {};
-    const prefilled: Record<string, string> = {};
-    for (const cell of traceSpec.cells) {
-      const key = `${cell.row}-${cell.col}`;
-      if (cell.expectedAnswers && cell.expectedAnswers[0] !== undefined) {
-        prefilled[key] = cell.expectedAnswers[0];
-      } else if (cell.numericExpected !== undefined) {
-        prefilled[key] = String(cell.numericExpected);
+  const [values, setValues, resetValues] = useInteractiveStepDraft<Readonly<Record<string, string>>>(
+    draftKey,
+    () => {
+      if (!completed) return {};
+      const prefilled: Record<string, string> = {};
+      for (const cell of traceSpec.cells) {
+        const key = `${cell.row}-${cell.col}`;
+        if (cell.expectedAnswers && cell.expectedAnswers[0] !== undefined) {
+          prefilled[key] = cell.expectedAnswers[0];
+        } else if (cell.numericExpected !== undefined) {
+          prefilled[key] = String(cell.numericExpected);
+        }
       }
-    }
-    return prefilled;
-  });
+      return prefilled;
+    },
+    raw => (isStringRecord(raw, 200) ? raw : null),
+  );
 
   const [grade, setGrade] = useState<AlgoTraceGradeResult | null>(null);
 
@@ -43,7 +56,7 @@ export default function AlgoTraceDiagram({ spec, completed, onEvaluated }: Diagr
   };
 
   const handleReset = () => {
-    setValues({});
+    resetValues();
     setGrade(null);
   };
 

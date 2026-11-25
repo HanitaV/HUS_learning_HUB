@@ -22,7 +22,7 @@ import {
 } from '../core/courses/search';
 import { courseLessons } from '../core/learning/content';
 import { matchRealElement } from '../core/learning/elements';
-import { courseProgress } from '../core/learning/progress';
+import { courseEffectiveProgress } from '../core/learning/progress';
 import { courseRegistry, subjectList } from '../infrastructure/content/catalogue';
 import { learningContent } from '../infrastructure/content/learning';
 import { useLearningProgress } from '../app/useLearningProgress';
@@ -159,10 +159,7 @@ export default function CoursesPage() {
         const lessons = courseLessons(learningContent, course);
         const pct =
           lessons.length > 0
-            ? courseProgress(
-                lessons.map(l => l.id),
-                progress,
-              )
+            ? courseEffectiveProgress(course, lessons, progress)
             : undefined;
         const shellLessonCounts = course.chapterIds
           .flatMap(id => learningContent.chapters.filter(ch => ch.id === id))

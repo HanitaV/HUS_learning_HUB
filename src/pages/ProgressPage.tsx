@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { useQuestProgress } from '../app/useQuestProgress';
-import { courseProgress, subjectProgress } from '../core/learning/progress';
+import {
+  completedCourseLessonIds,
+  courseEffectiveProgress,
+  effectiveCompletedLessonIds,
+  subjectProgress,
+} from '../core/learning/progress';
 import { courseLessons } from '../core/learning/content';
 import { courseRegistry, subjectList } from '../infrastructure/content/catalogue';
 import { learningContent } from '../infrastructure/content/learning';
@@ -32,6 +37,11 @@ export default function ProgressPage() {
     questProgress.completedQuestIds.includes(q.id),
   );
   const availableCourses = courseRegistry.list().filter(c => c.status === 'available');
+  const effectiveCompletedIds = effectiveCompletedLessonIds(
+    availableCourses,
+    learningContent,
+    progress,
+  );
   const visits = progress.recentTopics.flatMap(t => {
     const course = courseRegistry.get(t.courseId);
     const lesson = courseLessons(learningContent, course).find(l => l.id === t.lessonId);
@@ -66,7 +76,7 @@ export default function ProgressPage() {
           <p>
             Tiến độ lưu cục bộ trên trình duyệt này.{' '}
             <span className="font-medium text-ink tabular-nums">
-              {progress.completedLessonIds.length} bài đã hoàn thành
+              {effectiveCompletedIds.length} bài đã hoàn thành
             </span>{' '}
             ·{' '}
             <span className="font-medium text-ink tabular-nums">
@@ -91,7 +101,7 @@ export default function ProgressPage() {
         <div className="px-6 py-5">
           <dt className="text-xs font-medium text-ink-muted">Bài học hoàn thành</dt>
           <dd className="mt-1.5 font-mono text-3xl font-semibold tabular-nums text-ink">
-            {progress.completedLessonIds.length}
+            {effectiveCompletedIds.length}
           </dd>
         </div>
         <div className="px-6 py-5">
@@ -129,11 +139,8 @@ export default function ProgressPage() {
           <div className="hus-card-surface overflow-hidden divide-y divide-border rounded-[var(--radius-xl)] border border-border bg-surface">
             {availableCourses.map(course => {
               const lessons = courseLessons(learningContent, course);
-              const lessonIds = lessons.map(l => l.id);
-              const completedCount = lessonIds.filter(id =>
-                progress.completedLessonIds.includes(id),
-              ).length;
-              const percentage = courseProgress(lessonIds, progress);
+              const completedCount = completedCourseLessonIds(course, lessons, progress).length;
+              const percentage = courseEffectiveProgress(course, lessons, progress);
 
               return (
                 <article key={course.id} className="p-5">

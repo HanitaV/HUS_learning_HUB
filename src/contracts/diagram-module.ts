@@ -10,6 +10,8 @@ export interface DiagramRendererProps<TSpec extends DiagramStepSpec = DiagramSte
   readonly spec: TSpec;
   readonly completed: boolean;
   readonly fadeLevel: 0 | 1 | 2;
+  readonly hideSolutionOverlay?: boolean | undefined;
+  readonly draftKey?: string | undefined;
   readonly onEvaluated: (result: DiagramStepResult) => void;
 }
 

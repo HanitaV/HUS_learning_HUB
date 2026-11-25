@@ -1,5 +1,5 @@
-import { isValidElement, useState, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { isValidElement, memo, useState, type ReactNode } from 'react';
+import ReactMarkdown, { type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
@@ -8,6 +8,12 @@ import { Link } from 'react-router';
 import { slugifyHeading } from '../../core/learning/outline';
 import { CheckIcon, CopyIcon } from '../ui/Icons';
 import 'katex/dist/katex.min.css';
+
+const REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS: NonNullable<Options['rehypePlugins']> = [
+  [rehypeKatex, { trust: false, strict: 'warn' }],
+  [rehypeHighlight, { detect: false }],
+];
 
 function extractPlainText(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -41,7 +47,11 @@ function CodeBlock({ children }: { readonly children?: ReactNode }) {
         aria-label={copied ? 'Đã sao chép đoạn mã' : 'Sao chép đoạn mã'}
         className="absolute right-2.5 top-2.5 z-10 inline-flex min-h-[30px] items-center gap-1 rounded-[var(--radius-sm)] border border-border bg-surface/95 px-2 py-1 text-[11px] font-medium text-ink-secondary transition-colors hover:border-border-strong hover:text-ink"
       >
-        {copied ? <CheckIcon width={12} height={12} className="text-success" /> : <CopyIcon width={12} height={12} />}
+        {copied ? (
+          <CheckIcon width={12} height={12} className="text-success" />
+        ) : (
+          <CopyIcon width={12} height={12} />
+        )}
         <span>{copied ? 'Đã sao chép' : 'Sao chép'}</span>
       </button>
       <pre className="!my-0 pr-24">{children}</pre>
@@ -49,7 +59,7 @@ function CodeBlock({ children }: { readonly children?: ReactNode }) {
   );
 }
 
-export default function Markdown({
+const Markdown = memo(function Markdown({
   children,
   inline = false,
 }: {
@@ -65,14 +75,11 @@ export default function Markdown({
     return seen === 0 ? base : `${base}-${seen + 1}`;
   };
 
-  return (
+  const rendered = (
     <ReactMarkdown
       skipHtml
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[
-        [rehypeKatex, { trust: false, strict: 'warn' }],
-        [rehypeHighlight, { detect: false }],
-      ]}
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
       components={{
         p: ({ children: pChildren }) => (inline ? <span>{pChildren}</span> : <p>{pChildren}</p>),
         h2: ({ children: hChildren }) => (
@@ -109,4 +116,8 @@ export default function Markdown({
       {children}
     </ReactMarkdown>
   );
-}
+
+  return inline ? rendered : <div className="hus-markdown">{rendered}</div>;
+});
+
+export default Markdown;

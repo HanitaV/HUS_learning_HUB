@@ -1,9 +1,14 @@
-import type { ChapterExamDraft, ChapterExamLengthPreset } from '../../domain/chapter-exam';
+import type {
+  ChapterExamDraft,
+  ChapterExamLengthPreset,
+  ExamAnswerMode,
+} from '../../domain/chapter-exam';
 
 export interface StoredChapterExamSession {
   readonly version: 1;
   readonly preset: ChapterExamLengthPreset;
   readonly customCount?: number | undefined;
+  readonly answerMode?: ExamAnswerMode | undefined;
   readonly seed: number;
   readonly submitted: boolean;
   readonly draft: ChapterExamDraft;
@@ -52,6 +57,13 @@ export function parseChapterExamSessionJson(raw: string): StoredChapterExamSessi
     ) {
       return null;
     }
+    if (
+      parsed.answerMode !== undefined &&
+      parsed.answerMode !== 'written-all' &&
+      parsed.answerMode !== 'mixed'
+    ) {
+      return null;
+    }
     if (typeof parsed.seed !== 'number' || !Number.isFinite(parsed.seed)) return null;
     if (typeof parsed.submitted !== 'boolean') return null;
     if (!isPlainRecord(parsed.draft)) return null;
@@ -96,16 +108,35 @@ export function parseChapterExamSessionJson(raw: string): StoredChapterExamSessi
       checkedRubricIds[key] = val as readonly string[];
     }
 
+    let completedInteractiveStepIds: Record<string, readonly string[]> | undefined;
+    const rawInteractive = parsed.draft.completedInteractiveStepIds;
+    if (rawInteractive !== undefined) {
+      if (!isPlainRecord(rawInteractive)) return null;
+      completedInteractiveStepIds = {};
+      for (const [key, val] of Object.entries(rawInteractive)) {
+        if (
+          !Array.isArray(val) ||
+          val.length > 30 ||
+          !val.every(item => typeof item === 'string' && item.length <= 200)
+        ) {
+          return null;
+        }
+        completedInteractiveStepIds[key] = val as readonly string[];
+      }
+    }
+
     return {
       version: 1,
       preset: parsed.preset as ChapterExamLengthPreset,
       ...(parsed.customCount !== undefined ? { customCount: parsed.customCount } : {}),
+      ...(parsed.answerMode !== undefined ? { answerMode: parsed.answerMode } : {}),
       seed: parsed.seed,
       submitted: parsed.submitted,
       draft: {
         objectiveAnswers,
         writtenResponses,
         checkedRubricIds,
+        ...(completedInteractiveStepIds !== undefined ? { completedInteractiveStepIds } : {}),
       },
     };
   } catch {

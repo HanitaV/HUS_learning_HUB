@@ -10,27 +10,60 @@ import {
   type MoSlotCounts,
   type MoSlotId,
 } from '../../core/chemistry/essay-engine';
+import {
+  isPlainObject,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { MoDiagramCanvas } from '../chemistry/MoDiagramCanvas';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
-export default function MoDiagram({ spec, completed, onEvaluated }: DiagramRendererProps) {
+interface MoPersistedDraft {
+  readonly ordering: MoOrdering;
+  readonly counts: MoSlotCounts;
+}
+
+function validateMoDraft(raw: unknown): MoPersistedDraft | null {
+  if (!isPlainObject(raw)) return null;
+  if (raw.ordering !== 'type-1' && raw.ordering !== 'type-2') return null;
+  if (!isPlainObject(raw.counts)) return null;
+  const counts: Record<string, number> = { ...EMPTY_MO_COUNTS };
+  for (const key of Object.keys(EMPTY_MO_COUNTS)) {
+    const val = raw.counts[key];
+    if (val !== undefined) {
+      if (typeof val !== 'number' || !Number.isInteger(val) || val < 0 || val > 2) return null;
+      counts[key] = val;
+    }
+  }
+  return { ordering: raw.ordering, counts: counts as unknown as MoSlotCounts };
+}
+
+export default function MoDiagram({ spec, completed, draftKey, onEvaluated }: DiagramRendererProps) {
   const moSpec = spec as MoDiagramStepSpec;
-  const [ordering, setOrdering] = useState<MoOrdering>('type-1');
-  const [counts, setCounts] = useState<MoSlotCounts>(() =>
-    completed
-      ? getExpectedMoCounts(moSpec.expectedOrdering, moSpec.expectedTotalElectrons)
-      : EMPTY_MO_COUNTS,
+  const [persisted, setPersisted, resetPersisted] = useInteractiveStepDraft<MoPersistedDraft>(
+    draftKey,
+    () => ({
+      ordering: completed ? moSpec.expectedOrdering : 'type-1',
+      counts: completed
+        ? getExpectedMoCounts(moSpec.expectedOrdering, moSpec.expectedTotalElectrons)
+        : EMPTY_MO_COUNTS,
+    }),
+    validateMoDraft,
   );
+  const { ordering, counts } = persisted;
+  const setOrdering = (next: MoOrdering) => setPersisted(prev => ({ ...prev, ordering: next }));
+  const setCounts = (next: MoSlotCounts) => setPersisted(prev => ({ ...prev, counts: next }));
   const [highlightSlotIds, setHighlightSlotIds] = useState<readonly MoSlotId[]>([]);
   const [shakeSlotIds, setShakeSlotIds] = useState<readonly MoSlotId[]>([]);
   const [diagnosis, setDiagnosis] = useState<MoDiagnosis | null>(null);
 
   useEffect(() => {
     if (completed) {
-      setOrdering(moSpec.expectedOrdering);
-      setCounts(getExpectedMoCounts(moSpec.expectedOrdering, moSpec.expectedTotalElectrons));
+      setPersisted({
+        ordering: moSpec.expectedOrdering,
+        counts: getExpectedMoCounts(moSpec.expectedOrdering, moSpec.expectedTotalElectrons),
+      });
     }
-  }, [completed, moSpec.expectedOrdering, moSpec.expectedTotalElectrons]);
+  }, [completed, moSpec.expectedOrdering, moSpec.expectedTotalElectrons, setPersisted]);
 
   const handleCheck = () => {
     const res = diagnoseMoFill(
@@ -55,8 +88,7 @@ export default function MoDiagram({ spec, completed, onEvaluated }: DiagramRende
   };
 
   const handleReset = () => {
-    setOrdering('type-1');
-    setCounts(EMPTY_MO_COUNTS);
+    resetPersisted();
     setHighlightSlotIds([]);
     setShakeSlotIds([]);
     setDiagnosis(null);

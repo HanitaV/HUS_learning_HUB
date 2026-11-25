@@ -2,20 +2,69 @@ import { useState } from 'react';
 import type { DiagramRendererProps } from '../../contracts/diagram-module';
 import type { BalanceFlowBarSpec, BalanceFlowStepSpec } from '../../domain/semi-essay';
 import { gradeBalanceFlowStep, type BalanceFlowGradeResult } from '../../core/learning/balance-flow';
+import {
+  isPlainObject,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 import Markdown from '../../components/learning/Markdown';
 
-export default function BalanceFlowDiagram({ spec, onEvaluated }: DiagramRendererProps) {
+interface BalanceFlowPersistedDraft {
+  readonly initialLevels: Readonly<Record<string, number>>;
+  readonly finalLevels: Readonly<Record<string, number>>;
+  readonly transferSign: '-' | '0' | '+' | '';
+}
+
+export default function BalanceFlowDiagram({ spec, draftKey, onEvaluated }: DiagramRendererProps) {
   const lolSpec = spec as BalanceFlowStepSpec;
   const maxLevel = lolSpec.maxLevel ?? 4;
 
-  const [initialLevels, setInitialLevels] = useState<Readonly<Record<string, number>>>(() =>
-    Object.fromEntries(lolSpec.initialBars.map(b => [b.id, 0])),
+  const [persisted, setPersisted, resetPersisted] = useInteractiveStepDraft<BalanceFlowPersistedDraft>(
+    draftKey,
+    () => ({
+      initialLevels: Object.fromEntries(lolSpec.initialBars.map(b => [b.id, 0])),
+      finalLevels: Object.fromEntries(lolSpec.finalBars.map(b => [b.id, 0])),
+      transferSign: '',
+    }),
+    raw => {
+      if (!isPlainObject(raw)) return null;
+      if (!isPlainObject(raw.initialLevels) || !isPlainObject(raw.finalLevels)) return null;
+      if (
+        raw.transferSign !== '-' &&
+        raw.transferSign !== '0' &&
+        raw.transferSign !== '+' &&
+        raw.transferSign !== ''
+      ) {
+        return null;
+      }
+      const initialLevels: Record<string, number> = {};
+      for (const b of lolSpec.initialBars) {
+        const val = raw.initialLevels[b.id];
+        if (val === undefined) initialLevels[b.id] = 0;
+        else if (typeof val === 'number' && Number.isInteger(val) && val >= 0 && val <= maxLevel) {
+          initialLevels[b.id] = val;
+        } else return null;
+      }
+      const finalLevels: Record<string, number> = {};
+      for (const b of lolSpec.finalBars) {
+        const val = raw.finalLevels[b.id];
+        if (val === undefined) finalLevels[b.id] = 0;
+        else if (typeof val === 'number' && Number.isInteger(val) && val >= 0 && val <= maxLevel) {
+          finalLevels[b.id] = val;
+        } else return null;
+      }
+      return { initialLevels, finalLevels, transferSign: raw.transferSign };
+    },
   );
-  const [finalLevels, setFinalLevels] = useState<Readonly<Record<string, number>>>(() =>
-    Object.fromEntries(lolSpec.finalBars.map(b => [b.id, 0])),
-  );
-  const [transferSign, setTransferSign] = useState<'-' | '0' | '+' | ''>('');
+  const { initialLevels, finalLevels, transferSign } = persisted;
+  const setInitialLevels = (
+    updater: (prev: Readonly<Record<string, number>>) => Readonly<Record<string, number>>,
+  ) => setPersisted(prev => ({ ...prev, initialLevels: updater(prev.initialLevels) }));
+  const setFinalLevels = (
+    updater: (prev: Readonly<Record<string, number>>) => Readonly<Record<string, number>>,
+  ) => setPersisted(prev => ({ ...prev, finalLevels: updater(prev.finalLevels) }));
+  const setTransferSign = (next: '-' | '0' | '+' | '') =>
+    setPersisted(prev => ({ ...prev, transferSign: next }));
   const [grade, setGrade] = useState<BalanceFlowGradeResult | null>(null);
 
   const adjustBar = (side: 'initial' | 'final', barId: string, delta: number) => {
@@ -39,9 +88,7 @@ export default function BalanceFlowDiagram({ spec, onEvaluated }: DiagramRendere
   };
 
   const handleReset = () => {
-    setInitialLevels(Object.fromEntries(lolSpec.initialBars.map(b => [b.id, 0])));
-    setFinalLevels(Object.fromEntries(lolSpec.finalBars.map(b => [b.id, 0])));
-    setTransferSign('');
+    resetPersisted();
     setGrade(null);
   };
 

@@ -21,12 +21,17 @@ export interface MathSymbol {
   readonly glyph: string;
   /** Optional KaTeX expression rendered inside the toolbar button for crisp visual math notation. */
   readonly buttonLatex?: string;
+  /** Canonical backslash shorthand trigger (e.g. `\lim`, `\frac`, `\sum`) aligned with MathSlashAutocomplete. */
+  readonly shorthand?: string;
   /** Optional override for the string inserted in 'unicode' mode (defaults to glyph). */
   readonly unicodeInsert?: string;
+  /** Optional override for the string inserted in 'mathlib' mode (aligned 1-to-1 with shorthand). */
+  readonly mathlibInsert?: string;
   /** LaTeX snippet inserted in 'latex' mode. */
   readonly latexInsert: string;
   /** Cursor offset from the end of inserted text (negative moves caret left, e.g. -1 lands inside '()'). */
   readonly unicodeCursorOffset?: number;
+  readonly mathlibCursorOffset?: number;
   readonly latexCursorOffset?: number;
   /** Human-readable Vietnamese label for tooltips and aria-label. */
   readonly label: string;

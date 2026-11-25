@@ -2,6 +2,11 @@ import { useMemo, useState, type KeyboardEvent } from 'react';
 import type { DiagramRendererProps } from '../../contracts/diagram-module';
 import type { HeatmapStepSpec, HeatmapThermalTrend } from '../../domain/semi-essay';
 import { gradeHeatmapStep, mapHeatColor, type HeatmapGradeResult } from '../../core/learning/heatmap';
+import {
+  isPlainObject,
+  isStringArray,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
 const FLOW_DIRECTIONS: readonly { readonly angle: number; readonly label: string; readonly symbol: string }[] = [
@@ -22,13 +27,53 @@ const TREND_LABEL: Record<HeatmapThermalTrend, string> = {
   cooling: 'Lạnh đi',
 };
 
-export default function HeatmapDiagram({ spec, onEvaluated }: DiagramRendererProps) {
+interface HeatmapPersistedDraft {
+  readonly selectedCells: readonly string[];
+  readonly flowAngles: Readonly<Record<string, number>>;
+  readonly paintedTrends: Readonly<Record<string, HeatmapThermalTrend>>;
+}
+
+export default function HeatmapDiagram({ spec, draftKey, onEvaluated }: DiagramRendererProps) {
   const heatSpec = spec as HeatmapStepSpec;
   const [showNumbers, setShowNumbers] = useState(true);
-  const [selectedCells, setSelectedCells] = useState<readonly string[]>([]);
-  const [flowAngles, setFlowAngles] = useState<Readonly<Record<string, number>>>({});
+  const [persisted, setPersisted, resetPersisted] = useInteractiveStepDraft<HeatmapPersistedDraft>(
+    draftKey,
+    () => ({ selectedCells: [], flowAngles: {}, paintedTrends: {} }),
+    raw => {
+      if (!isPlainObject(raw)) return null;
+      if (!isStringArray(raw.selectedCells, 200)) return null;
+      if (!isPlainObject(raw.flowAngles) || !isPlainObject(raw.paintedTrends)) return null;
+      const flowAngles: Record<string, number> = {};
+      for (const [k, v] of Object.entries(raw.flowAngles)) {
+        if (k.length > 80 || typeof v !== 'number' || !Number.isFinite(v)) return null;
+        flowAngles[k] = v;
+      }
+      const paintedTrends: Record<string, HeatmapThermalTrend> = {};
+      for (const [k, v] of Object.entries(raw.paintedTrends)) {
+        if (k.length > 80 || (v !== 'warming' && v !== 'steady' && v !== 'cooling')) return null;
+        paintedTrends[k] = v;
+      }
+      return { selectedCells: raw.selectedCells, flowAngles, paintedTrends };
+    },
+  );
+  const { selectedCells, flowAngles, paintedTrends } = persisted;
+  const setSelectedCells = (updater: (prev: readonly string[]) => readonly string[]) =>
+    setPersisted(prev => ({ ...prev, selectedCells: updater(prev.selectedCells) }));
+  const setFlowAngles = (
+    updater:
+      | Readonly<Record<string, number>>
+      | ((prev: Readonly<Record<string, number>>) => Readonly<Record<string, number>>),
+  ) =>
+    setPersisted(prev => ({
+      ...prev,
+      flowAngles: typeof updater === 'function' ? updater(prev.flowAngles) : updater,
+    }));
+  const setPaintedTrends = (
+    updater: (
+      prev: Readonly<Record<string, HeatmapThermalTrend>>,
+    ) => Readonly<Record<string, HeatmapThermalTrend>>,
+  ) => setPersisted(prev => ({ ...prev, paintedTrends: updater(prev.paintedTrends) }));
   const [activeFlowPointId, setActiveFlowPointId] = useState<string>(heatSpec.flowPoints?.[0]?.id ?? '');
-  const [paintedTrends, setPaintedTrends] = useState<Readonly<Record<string, HeatmapThermalTrend>>>({});
   const [focusCoord, setFocusCoord] = useState<{ readonly r: number; readonly c: number }>({ r: 0, c: 0 });
   const [grade, setGrade] = useState<HeatmapGradeResult | null>(null);
 
@@ -101,9 +146,7 @@ export default function HeatmapDiagram({ spec, onEvaluated }: DiagramRendererPro
   };
 
   const handleReset = () => {
-    setSelectedCells([]);
-    setFlowAngles({});
-    setPaintedTrends({});
+    resetPersisted();
     setGrade(null);
   };
 

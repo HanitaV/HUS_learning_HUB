@@ -310,3 +310,13 @@ export function AlertCircleIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function ClipboardCheckIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <rect x="8.5" y="2.5" width="7" height="3.5" rx="1" />
+      <path d="M8.5 4.25H6.5A2 2 0 0 0 4.5 6.25v13.25a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V6.25a2 2 0 0 0-2-2h-2" />
+      <path d="m9 13.25 2.1 2.1 4.15-4.35" />
+    </svg>
+  );
+}

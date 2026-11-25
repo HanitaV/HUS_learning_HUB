@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type {
   MathSymbol,
   MathSymbolContext,
@@ -9,15 +9,13 @@ import {
   applyShorthandSuggestion,
   detectActiveBackslashQuery,
   filterShorthandSuggestions,
-  renderTextByMathMode,
-  shouldAutoShowMathPreview,
   type ActiveBackslashQuery,
   type MathShorthandEntry,
 } from '../../core/learning/math-shorthand';
 import { insertMathSymbolAtCursor } from '../../core/learning/math-symbols';
-import Markdown from './Markdown';
 import { MathSlashAutocomplete } from './MathSlashAutocomplete';
 import { MathSymbolToolbar } from './MathSymbolToolbar';
+import { RealtimeMathPreview } from './RealtimeMathPreview';
 import '../../styles/written-practice.css';
 
 export interface RuledA4SheetProps {
@@ -33,35 +31,43 @@ export interface RuledA4SheetProps {
   readonly symbolContext?: MathSymbolContext | undefined;
   readonly toolbarLabel?: string | undefined;
   readonly previewKey?: string | undefined;
+  /** Start with the full symbol keyboard collapsed to reduce clutter on multi-question exam pages. */
+  readonly defaultToolbarOpen?: boolean | undefined;
 }
 
-export function RuledA4Sheet({
+export const RuledA4Sheet = memo(function RuledA4Sheet({
   id,
   label,
-  sheetTag = 'Giấy A4 kẻ ngang',
+  sheetTag = 'Giấy A4',
   value,
   onChange,
-  placeholder = 'Trình bày lập luận từng dòng trên giấy A4 (gõ \\ để chèn nhanh ký tự đặc biệt & công thức)…',
+  placeholder = 'Trình bày từng dòng trên giấy A4 (gõ \\ để chèn nhanh như \\lim, \\frac, \\sum, hoặc gõ trực tiếp x^2, (a)/(b), <=, => để hiện công thức thời gian thực)…',
   minRows = 6,
   maxLength = 20000,
   readOnly = false,
   symbolContext,
   toolbarLabel = 'Bảng chèn ký hiệu toán học',
   previewKey,
+  defaultToolbarOpen = true,
 }: RuledA4SheetProps) {
   const { preferences, setInsertMode } = useMathSymbolPreferences();
   const activeMathMode = preferences.insertMode;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-  const [toolbarVisible, setToolbarVisible] = useState(true);
+  const [toolbarVisible, setToolbarVisible] = useState(defaultToolbarOpen);
   const [previewOverride, setPreviewOverride] = useState<boolean | null>(null);
   const [slashState, setSlashState] = useState<{
     readonly activeQuery: ActiveBackslashQuery;
     readonly highlightIndex: number;
   } | null>(null);
 
-  const showPreview =
-    previewOverride ?? shouldAutoShowMathPreview(value, activeMathMode);
+  const hasContent = value.trim().length > 0;
+  // Realtime KaTeX preview turns on automatically as soon as the student writes on the A4 sheet
+  const showPreview = previewOverride ?? hasContent;
 
   const slashSuggestions = useMemo(() => {
     if (!slashState) return [];
@@ -70,65 +76,80 @@ export function RuledA4Sheet({
 
   const lineCount = useMemo(() => {
     if (!value) return 1;
-    return value.split('\n').length;
+    let count = 1;
+    for (let i = 0; i < value.length; i += 1) {
+      if (value.charCodeAt(i) === 10) count += 1;
+    }
+    return count;
   }, [value]);
 
   const computedRows = Math.max(minRows, Math.min(16, lineCount + 1));
 
-  const focusAndPlaceCaret = (start: number, end: number = start) => {
+  const focusAndPlaceCaret = useCallback((start: number, end: number = start) => {
     requestAnimationFrame(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
         textareaRef.current.setSelectionRange(start, end);
       }
     });
-  };
+  }, []);
 
-  const handleInsertSymbol = (symbol: MathSymbol, mode: MathSymbolInsertMode) => {
-    if (readOnly) return;
-    const el = textareaRef.current;
-    const inserted = insertMathSymbolAtCursor(
-      value,
-      el?.selectionStart ?? value.length,
-      el?.selectionEnd ?? value.length,
-      symbol,
-      mode,
-      { wrapLatexWithDollars: true },
-    );
-    onChange(inserted.value);
-    focusAndPlaceCaret(inserted.selectionStart, inserted.selectionEnd);
-  };
+  const handleInsertSymbol = useCallback(
+    (symbol: MathSymbol, mode: MathSymbolInsertMode) => {
+      if (readOnly) return;
+      const curVal = valueRef.current;
+      const el = textareaRef.current;
+      const inserted = insertMathSymbolAtCursor(
+        curVal,
+        el?.selectionStart ?? curVal.length,
+        el?.selectionEnd ?? curVal.length,
+        symbol,
+        mode,
+        { wrapLatexWithDollars: true },
+      );
+      onChangeRef.current(inserted.value);
+      focusAndPlaceCaret(inserted.selectionStart, inserted.selectionEnd);
+    },
+    [readOnly, focusAndPlaceCaret],
+  );
 
-  const handleInsertShorthandEntry = (entry: MathShorthandEntry, mode: MathSymbolInsertMode) => {
-    if (readOnly) return;
-    const el = textareaRef.current;
-    const posStart = el?.selectionStart ?? value.length;
-    const posEnd = el?.selectionEnd ?? posStart;
-    const applied = applyShorthandSuggestion(
-      value,
-      { replaceFrom: posStart, replaceTo: posEnd, query: '' },
-      entry,
-      mode,
-      { wrapLatexWithDollars: true },
-    );
-    onChange(applied.value);
-    setSlashState(null);
-    focusAndPlaceCaret(applied.caret);
-  };
+  const handleInsertShorthandEntry = useCallback(
+    (entry: MathShorthandEntry, mode: MathSymbolInsertMode) => {
+      if (readOnly) return;
+      const curVal = valueRef.current;
+      const el = textareaRef.current;
+      const posStart = el?.selectionStart ?? curVal.length;
+      const posEnd = el?.selectionEnd ?? posStart;
+      const applied = applyShorthandSuggestion(
+        curVal,
+        { replaceFrom: posStart, replaceTo: posEnd, query: '' },
+        entry,
+        mode,
+        { wrapLatexWithDollars: true },
+      );
+      onChangeRef.current(applied.value);
+      setSlashState(null);
+      focusAndPlaceCaret(applied.caret);
+    },
+    [readOnly, focusAndPlaceCaret],
+  );
 
-  const commitSlashSuggestion = (entry: MathShorthandEntry) => {
-    if (!slashState || readOnly) return;
-    const applied = applyShorthandSuggestion(
-      value,
-      slashState.activeQuery,
-      entry,
-      activeMathMode,
-      { wrapLatexWithDollars: true },
-    );
-    onChange(applied.value);
-    setSlashState(null);
-    focusAndPlaceCaret(applied.caret);
-  };
+  const commitSlashSuggestion = useCallback(
+    (entry: MathShorthandEntry) => {
+      if (!slashState || readOnly) return;
+      const applied = applyShorthandSuggestion(
+        valueRef.current,
+        slashState.activeQuery,
+        entry,
+        activeMathMode,
+        { wrapLatexWithDollars: true },
+      );
+      onChangeRef.current(applied.value);
+      setSlashState(null);
+      focusAndPlaceCaret(applied.caret);
+    },
+    [slashState, readOnly, activeMathMode, focusAndPlaceCaret],
+  );
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!slashState || slashSuggestions.length === 0) return;
@@ -171,13 +192,13 @@ export function RuledA4Sheet({
   return (
     <div data-a4-ruled-sheet="true" className="space-y-2">
       <div className="hus-a4-sheet">
-        {/* Top A4 Exam / Notebook Folio Header */}
-        <div className="hus-a4-header flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 sm:px-4">
+        {/* Compact A4 Header */}
+        <div className="hus-a4-header flex flex-wrap items-center justify-between gap-2 px-3.5 py-1.5 sm:px-4">
           <div className="flex flex-wrap items-center gap-2">
-            <label htmlFor={id} className="text-sm font-semibold text-ink">
+            <label htmlFor={id} className="text-xs font-semibold text-ink sm:text-sm">
               {label}
             </label>
-            <span className="rounded-[var(--radius-sm)] border border-border bg-surface/80 px-2 py-0.5 font-mono text-[11px] font-medium text-ink-secondary">
+            <span className="rounded-[var(--radius-sm)] border border-border bg-surface/80 px-1.5 py-0.5 font-mono text-[11px] text-ink-muted">
               {sheetTag}
             </span>
           </div>
@@ -195,9 +216,13 @@ export function RuledA4Sheet({
                 type="button"
                 onClick={() => setToolbarVisible(v => !v)}
                 aria-pressed={toolbarVisible}
-                className="min-h-[28px] rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:text-ink"
+                className={`min-h-[26px] rounded-[var(--radius-sm)] border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                  toolbarVisible
+                    ? 'border-accent/50 bg-accent-subtle text-accent-ink'
+                    : 'border-border bg-surface text-ink-secondary hover:border-border-strong hover:text-ink'
+                }`}
               >
-                {toolbarVisible ? 'Ẩn bộ gõ ký tự' : '∑ Bộ gõ ký tự đặc biệt'}
+                {toolbarVisible ? 'Ẩn phím ∑' : '∑ Phím ký hiệu'}
               </button>
             ) : null}
 
@@ -205,9 +230,13 @@ export function RuledA4Sheet({
               type="button"
               onClick={() => setPreviewOverride(!showPreview)}
               aria-pressed={showPreview}
-              className="min-h-[28px] rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:border-border-strong hover:text-ink"
+              className={`min-h-[26px] rounded-[var(--radius-sm)] border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                showPreview
+                  ? 'border-accent/50 bg-accent-subtle text-accent-ink'
+                  : 'border-border bg-surface text-ink-secondary hover:border-border-strong hover:text-ink'
+              }`}
             >
-              {showPreview ? 'Ẩn xem trước' : 'Xem trước công thức'}
+              {showPreview ? 'Ẩn LaTeX trực tiếp' : 'Xem LaTeX trực tiếp'}
             </button>
           </div>
         </div>
@@ -240,30 +269,35 @@ export function RuledA4Sheet({
             const val = event.target.value;
             const caret = event.target.selectionStart;
             onChange(val);
-            const q = detectActiveBackslashQuery(val, caret);
-            setSlashState(q ? { activeQuery: q, highlightIndex: 0 } : null);
+            const q = val.includes('\\') ? detectActiveBackslashQuery(val, caret) : null;
+            setSlashState(prev => {
+              if (!q) return prev === null ? null : null;
+              return { activeQuery: q, highlightIndex: 0 };
+            });
           }}
           onKeyDown={handleKeyDown}
           onBlur={() => setSlashState(null)}
           className="hus-a4-textarea"
         />
 
-        {/* Typeset Formula & Prose Printout Band on the A4 Sheet */}
+        {/* Realtime Line-Cached KaTeX Printout Band on the A4 Sheet */}
         {showPreview ? (
           <div
             data-math-live-preview={previewKey ?? id}
-            className="hus-a4-preview px-4 py-3 text-sm leading-relaxed text-ink"
+            className="hus-a4-preview px-4 py-2.5 text-sm leading-relaxed text-ink"
           >
-            <p className="!mb-1.5 !mt-0 font-mono text-[11px] font-medium text-ink-muted">
-              Bản hiển thị ký hiệu &amp; công thức trên giấy:
-            </p>
-            {value.trim() ? (
-              <div className="[&>p:first-child]:!mt-0 [&>p:last-child]:!mb-0">
-                <Markdown>{renderTextByMathMode(value, activeMathMode)}</Markdown>
-              </div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="font-mono text-[11px] font-medium text-ink-muted">
+                Bản in LaTeX thời gian thực:
+              </span>
+            </div>
+            {hasContent ? (
+              <RealtimeMathPreview value={value} mode={activeMathMode} />
             ) : (
               <p className="!my-0 text-xs text-ink-muted">
-                Nhập nội dung, bấm phím ký tự đặc biệt phía trên hoặc gõ lệnh <code className="font-mono">\</code> để xem bản hiển thị công thức trực tiếp.
+                Gõ biểu thức hoặc lệnh <code className="font-mono">\lim</code>,{' '}
+                <code className="font-mono">\frac</code>, <code className="font-mono">x^2</code> để
+                hiển thị công thức toán trực tiếp tại đây.
               </p>
             )}
           </div>
@@ -285,4 +319,4 @@ export function RuledA4Sheet({
       ) : null}
     </div>
   );
-}
+});

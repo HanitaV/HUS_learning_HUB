@@ -1,4 +1,5 @@
 import type { Chapter, Lesson, Resource, Topic } from './learning';
+import type { ProblemFigureSpec } from './problem-figure';
 import type { SemiEssayExercise } from './semi-essay';
 
 export type ClassicExerciseDefinition = {
@@ -6,6 +7,7 @@ export type ClassicExerciseDefinition = {
   readonly lessonId: string;
   readonly title: string;
   readonly prompt: string;
+  readonly figure?: ProblemFigureSpec | undefined;
   readonly hints?: readonly string[];
   readonly explanation?: string;
   readonly provenance?: import('./learning').Provenance;

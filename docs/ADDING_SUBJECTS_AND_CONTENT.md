@@ -54,6 +54,7 @@ const course: Course = {
   title: 'Giải tích 1',
   language: 'vi',
   status: 'available', // Use 'metadata-only' until chapters & lessons exist
+  // studyMode: 'practice-only', // Optional: skip theory stepper and count solved exercises toward mastery
   chapterIds: ['mat1091-ch1'],
   resourceIds: [],
   provenance: {

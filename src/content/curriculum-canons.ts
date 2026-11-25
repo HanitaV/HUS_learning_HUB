@@ -38,6 +38,11 @@ export function resolveCourseConventionCanon(params: {
     forbiddenShortcutHints: [
       'Không sử dụng định lý hoặc công cụ thuộc các chương phía sau chưa học trong đề cương.',
     ],
+    presentationCheckpoints: [
+      'Nêu giả thiết & điều kiện áp dụng',
+      'Biến đổi từng bước đúng ký hiệu giáo trình',
+      'Kết luận rõ ràng kèm đơn vị / dạng chuẩn',
+    ],
     reasoningScaffolds: DEFAULT_REASONING_SCAFFOLDS,
   };
 }

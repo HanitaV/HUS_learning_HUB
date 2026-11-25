@@ -4,6 +4,7 @@ import type { NavigateFunction, NavigateOptions, To } from 'react-router';
 
 let cataloguePagePromise: Promise<typeof import('../pages/CataloguePage')> | null = null;
 let coursesPagePromise: Promise<typeof import('../pages/CoursesPage')> | null = null;
+let examPracticePagePromise: Promise<typeof import('../pages/ExamPracticePage')> | null = null;
 
 /**
  * Silently preloads the lazy CataloguePage (Home) chunk so returning from /courses
@@ -31,6 +32,16 @@ export function preloadCoursesPage(): Promise<typeof import('../pages/CoursesPag
     });
   }
   return coursesPagePromise;
+}
+
+export function preloadExamPracticePage(): Promise<typeof import('../pages/ExamPracticePage')> {
+  if (!examPracticePagePromise) {
+    examPracticePagePromise = import('../pages/ExamPracticePage').catch(err => {
+      examPracticePagePromise = null;
+      throw err;
+    });
+  }
+  return examPracticePagePromise;
 }
 
 type DocumentWithViewTransition = Document & {

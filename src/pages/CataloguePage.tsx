@@ -1,11 +1,19 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { navigateSmooth, preloadCoursesPage } from '../app/route-transition';
+import {
+  navigateSmooth,
+  preloadCoursesPage,
+  preloadExamPracticePage,
+} from '../app/route-transition';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { useQuestProgress } from '../app/useQuestProgress';
 import type { EntityId } from '../domain/learning';
 import { courseLessons } from '../core/learning/content';
-import { courseProgress } from '../core/learning/progress';
+import {
+  completedCourseLessonIds,
+  courseEffectiveProgress,
+  effectiveCompletedLessonIds,
+} from '../core/learning/progress';
 import { learningContent } from '../infrastructure/content/learning';
 import { skillQuestList } from '../infrastructure/quests/registry';
 import { filterCourses, getCourseSubject, groupCoursesBySubject } from '../core/courses/search';
@@ -26,6 +34,7 @@ import {
   AlertCircleIcon,
   ArrowRightIcon,
   ChevronRightIcon,
+  ClipboardCheckIcon,
   ClockIcon,
 } from '../components/ui/Icons';
 
@@ -141,20 +150,25 @@ export default function CataloguePage() {
         const lessons = courseLessons(learningContent, course);
         const lesson = lessons.find(item => item.id === topic.lessonId);
         if (!lesson) return [];
-        const lessonIds = lessons.map(item => item.id);
+        const completedIds = completedCourseLessonIds(course, lessons, progress);
         return [
           {
             ...topic,
             title: lesson.title,
             courseTitle: course.title,
             courseCode: course.academicCode ?? course.id,
-            completedCount: lessonIds.filter(id => progress.completedLessonIds.includes(id)).length,
+            completedCount: completedIds.length,
             totalLessons: lessons.length,
-            percentage: courseProgress(lessonIds, progress),
+            percentage: courseEffectiveProgress(course, lessons, progress),
           },
         ];
       }),
     [progress],
+  );
+
+  const effectiveCompletedIds = useMemo(
+    () => effectiveCompletedLessonIds(allCourses, learningContent, progress),
+    [allCourses, progress],
   );
 
   const primaryRecent = recentLessons[0];
@@ -191,18 +205,26 @@ export default function CataloguePage() {
     });
   };
 
+  const goToExamsSmoothly = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    void navigateSmooth(navigate, '/exams', preloadExamPracticePage);
+  };
+
   return (
-    <div className="space-y-16 sm:space-y-24">
+    <div className="space-y-12 sm:space-y-16">
       {/* First Viewport: Full-Bleed Edge-to-Edge Atomic Electron Sky + Cosmic Goal Centerpiece */}
       <section
         ref={heroSectionRef}
         onPointerMove={handleHeroPointerMove}
         onPointerLeave={handleHeroPointerLeave}
-        className="relative isolate w-full space-y-8 overflow-x-clip px-4 py-4 sm:space-y-10 sm:px-6 sm:py-6 lg:px-10"
+        className="relative isolate w-full space-y-6 overflow-x-clip px-4 py-3 sm:space-y-8 sm:px-6 sm:py-5 lg:px-10"
       >
         <ObservatoryCanvas backdrop={activeBackdrop} />
 
-        <div className="relative z-10 mx-auto max-w-4xl space-y-3.5 pt-1 text-center sm:pt-2">
+        <div className="relative z-10 mx-auto max-w-4xl space-y-3 pt-1 text-center sm:pt-2">
           <h1
             className="hus-hero-enter heading-display mx-auto max-w-[720px]"
             style={{ animationDelay: '0ms' }}
@@ -213,35 +235,45 @@ export default function CataloguePage() {
           </h1>
 
           <p
-            className="hus-hero-enter mx-auto max-w-[620px] text-sm leading-relaxed text-ink-secondary sm:text-base"
+            className="hus-hero-enter mx-auto max-w-[600px] text-sm leading-relaxed text-ink-secondary sm:text-base"
             style={{ animationDelay: '70ms' }}
           >
-            Trải nghiệm học phần Trường Đại học Khoa học Tự nhiên, ĐHQGHN theo từng chương chuẩn hóa,
-            nhiệm vụ 4 mốc tương tác và bài học chia chặng trực quan.
+            Học phần ĐHKHTN · ĐHQGHN chuẩn hóa theo từng chương, nhiệm vụ 4 mốc tương tác và luyện đề tự luận trên giấy A4.
           </p>
 
           <div
-            className="hus-hero-enter flex flex-col items-center justify-center gap-3 pt-1 sm:flex-row sm:gap-4"
+            className="hus-hero-enter flex flex-wrap items-center justify-center gap-2.5 pt-1 sm:gap-3"
             style={{ animationDelay: '130ms' }}
           >
             {primaryRecent ? (
               <Link
                 to={`/courses/${primaryRecent.courseId}/lessons/${primaryRecent.lessonId}`}
-                className="hus-btn hus-btn-primary min-h-[44px] px-5 text-sm sm:text-base"
+                className="hus-btn hus-btn-primary min-h-[42px] px-5 text-sm"
               >
                 <span>Tiếp tục: {primaryRecent.title}</span>
-                <ArrowRightIcon width={16} height={16} />
+                <ArrowRightIcon width={15} height={15} />
               </Link>
             ) : null}
+
+            <Link
+              to="/exams"
+              onMouseEnter={() => void preloadExamPracticePage()}
+              onFocus={() => void preloadExamPracticePage()}
+              onClick={goToExamsSmoothly}
+              className="hus-btn hus-btn-secondary min-h-[42px] px-4 text-sm font-medium !no-underline"
+            >
+              <ClipboardCheckIcon width={15} height={15} className="text-accent" />
+              <span>Luyện đề tự luận</span>
+            </Link>
 
             <Link
               to="/courses"
               onMouseEnter={() => void preloadCoursesPage()}
               onFocus={() => void preloadCoursesPage()}
               onClick={goToCoursesSmoothly}
-              className="hus-btn hus-btn-ghost min-h-[44px] px-4 text-sm font-medium text-ink-secondary hover:text-ink"
+              className="hus-btn hus-btn-ghost min-h-[42px] px-3.5 text-sm font-medium text-ink-secondary hover:text-ink"
             >
-              <span>Xem danh sách học phần</span>
+              <span>Danh sách học phần</span>
               <ChevronRightIcon width={15} height={15} />
             </Link>
           </div>
@@ -254,7 +286,7 @@ export default function CataloguePage() {
             subjects={subjectList}
             content={learningContent}
             quests={skillQuestList}
-            completedLessonIds={progress.completedLessonIds}
+            completedLessonIds={effectiveCompletedIds}
             completedQuestIds={questProgress.completedQuestIds}
             onActiveSubjectChange={handleActiveSubjectChange}
           />
@@ -295,23 +327,17 @@ export default function CataloguePage() {
         <aside
           role="note"
           aria-label="Lưu ý về nguồn nội dung"
-          className="hus-hero-enter relative z-10 mx-auto flex w-full max-w-3xl items-start gap-2.5 rounded-[var(--radius-lg)] border border-warning/25 bg-warning-subtle/80 px-4 py-3 text-xs leading-relaxed text-ink-secondary sm:items-center"
+          className="hus-hero-enter relative z-10 mx-auto flex w-full max-w-3xl items-center gap-2 rounded-[var(--radius-lg)] border border-warning/25 bg-warning-subtle/70 px-3.5 py-2 text-xs leading-relaxed text-ink-secondary"
           style={{ animationDelay: '220ms' }}
         >
-          <AlertCircleIcon
-            width={15}
-            height={15}
-            className="mt-0.5 shrink-0 text-warning sm:mt-0"
-          />
+          <AlertCircleIcon width={14} height={14} className="shrink-0 text-warning" />
           <p>
-            <strong className="font-semibold text-ink">Lưu ý:</strong> Toàn bộ nội dung trên
-            website không phải tài liệu chính thức mà được tổng hợp từ nhiều nguồn tham khảo, không
-            thể thay thế giảng viên trên lớp và giáo trình.
+            <strong className="font-semibold text-ink">Lưu ý:</strong> Nội dung tổng hợp tham khảo (không phải tài liệu chính thức), không thể thay thế giảng viên trên lớp và giáo trình.
           </p>
         </aside>
       </section>
 
-      <div className="mx-auto w-full max-w-6xl space-y-16 px-4 sm:space-y-24 sm:px-6">
+      <div className="mx-auto w-full max-w-6xl space-y-12 px-4 sm:space-y-16 sm:px-6">
         {/* Personalized Continue Learning OR Asymmetric Observatory Spotlight */}
         <ScrollReveal>
         {primaryRecent ? (
@@ -589,10 +615,7 @@ export default function CataloguePage() {
                 const lessons = courseLessons(learningContent, course);
                 const pct =
                   lessons.length > 0
-                    ? courseProgress(
-                        lessons.map(l => l.id),
-                        progress,
-                      )
+                    ? courseEffectiveProgress(course, lessons, progress)
                     : undefined;
                 return (
                   <CourseCard

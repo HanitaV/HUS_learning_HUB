@@ -8,13 +8,14 @@ This `template` branch ships with **no pre-bundled subjects or course content**,
 
 - **Automatic Content Discovery**: Drop a `course.ts` (and optional `content.ts`, `lessons/*.md`, `exercises.ts`, `written-practice.ts`, `semi-essays.ts`, `search-index.ts`) under `src/content/courses/<course-id>/` — routes, catalogue, prerequisite graphs, and search wire up automatically.
 - **Rich Academic Markdown & Math**: GitHub Flavored Markdown, syntax-highlighted code blocks, and KaTeX math rendering (`$...$` and `$$...$$`).
-- **Interactive Exercises & Guided Written Essays**:
-  - Classic objective exercises (`multiple-choice`, `multiple-answer`, `short-answer` with math glyph normalization).
-  - Multi-step guided written-reasoning studio with rubric self-review, model answer comparison, and **9 lazy-loaded interactive diagram kinds** (`fbd`, `heatmap`, `curve-2d`, `balance-flow`, `mo-diagram`, `prob-tree`, `algo-trace`, `proof-dag`, `parsons-flow`).
-  - Universal math symbol toolbar with `Ký hiệu`, `Mathlib \`, and `LaTeX` input modes plus A–Z `\` autocomplete.
-- **Grounded AI Tutor & NotebookLM Export (Zero API Keys)**:
-  - Deterministic Curriculum Graph-RAG with topological prerequisite horizon guard.
-  - Two-way **WebMCP** (`document.modelContext`) integration for Gemini in Chrome, with 1-click prompt copy + validated JSON import fallback.
+- **Interactive Exercises, Inline Labs & Exam Workbench**:
+  - Classic objective exercises (`multiple-choice`, `multiple-answer`, `short-answer` with math glyph normalization) and declarative SVG problem figures (`plot-2d` & 19 `physics-schematic` scenes via `<ProblemFigure />`).
+  - Inline multi-step guided written-reasoning & diagram cards directly inside lessons (`InlineSemiEssayExerciseCard`), chapter exams (`ChapterExamPage`), and a dedicated **Written Exam Practice Workbench** (`/#/exams` — `100% Tự luận giấy A4` ↔ `Đề hỗn hợp`), with **9 lazy-loaded interactive diagram kinds** (`fbd`, `heatmap`, `curve-2d`, `balance-flow`, `mo-diagram`, `prob-tree`, `algo-trace`, `proof-dag`, `parsons-flow`) and live `localStorage` draft persistence.
+  - Lag-free Ruled A4 essay sheets with realtime KaTeX preview (`<RealtimeMathPreview />`), 78-button math symbol toolbar, `Ký hiệu` / `Mathlib \` / `LaTeX` input modes, and 95+ `\` shorthands.
+  - Optional `studyMode: 'practice-only'` per course so practice-focused courses open directly into exercises and track mastery from solved problems.
+- **Grounded AI Tutor & NotebookLM Export (Zero API Keys, Zero Local Prompt API)**:
+  - Deterministic Curriculum Graph-RAG with topological prerequisite horizon guard and visual-context summaries.
+  - Adaptive Dual-Path **WebMCP** (`document.modelContext`) + **✨ Ask Gemini** prompts with `/10` Mức-1 rubric grading, custom-shorthand-to-LaTeX compilation, and 1-click single-question or whole-exam JSON sync.
   - On-demand `.md` syllabus bundle exporter for Google NotebookLM.
 - **Optional Lazy Subject Tools**:
   - In-browser **Python (Pyodide)** & **Java (CheerpJ)** WASM Code Lab (`src/modules/code-lab/CodeLabWorkspace.tsx`).

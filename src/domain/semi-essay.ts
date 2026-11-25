@@ -1,4 +1,5 @@
 import type { Provenance } from './learning';
+import type { ProblemFigureSpec } from './problem-figure';
 
 export interface TheoryAnchor {
   readonly id: string;
@@ -413,6 +414,7 @@ export interface SemiEssayExercise {
   readonly kind: 'semi-essay';
   readonly title: string;
   readonly prompt: string;
+  readonly figure?: ProblemFigureSpec | undefined;
   readonly fadeLevel?: 0 | 1 | 2;
   readonly given: readonly GivenQuantity[];
   readonly theoryAnchors: readonly TheoryAnchor[];

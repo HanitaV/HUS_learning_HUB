@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import katex from 'katex';
 import type {
   MathSymbol,
@@ -66,7 +66,7 @@ export interface MathSymbolToolbarProps {
   readonly label?: string;
 }
 
-export function MathSymbolToolbar({
+export const MathSymbolToolbar = memo(function MathSymbolToolbar({
   context,
   onInsert,
   onInsertShorthandEntry,
@@ -151,8 +151,11 @@ export function MathSymbolToolbar({
     const syntheticSymbol: MathSymbol = {
       id: entry.id,
       glyph: entry.unicodeInsert,
+      shorthand: entry.mathlibTrigger,
       unicodeInsert: entry.unicodeInsert,
       unicodeCursorOffset: entry.unicodeCursorOffset,
+      mathlibInsert: entry.mathlibInsert,
+      mathlibCursorOffset: entry.mathlibCursorOffset,
       latexInsert: entry.latexInsert,
       latexCursorOffset: entry.latexCursorOffset,
       label: entry.label,
@@ -338,34 +341,6 @@ export function MathSymbolToolbar({
         </div>
       </div>
 
-      {/* Mode orientation micro-hint */}
-      <p className="text-[11px] leading-relaxed text-ink-muted">
-        {effectiveInsertMode === 'mathlib' ? (
-          <>
-            Đang chọn <strong className="font-semibold text-ink">Mathlib \</strong>: gõ{' '}
-            <code className="font-mono text-ink">\{'{1/n}'}</code> (1 chia n),{' '}
-            <code className="font-mono text-ink">\{'{n^(n)}'}</code> (n mũ n),{' '}
-            <code className="font-mono text-ink">\sigma{'{n^(n)}'}</code>, hoặc gõ{' '}
-            <code className="font-mono text-ink">\</code> để mở danh sách A → Z.
-          </>
-        ) : effectiveInsertMode === 'latex' ? (
-          <>
-            Đang chọn <strong className="font-semibold text-ink">LaTeX chuẩn</strong>: dùng{' '}
-            <code className="font-mono text-ink">$...$</code> (vd{' '}
-            <code className="font-mono text-ink">$\frac{'{1}{n}'}$</code>,{' '}
-            <code className="font-mono text-ink">$n^{'{n}'}$</code>) hoặc gõ{' '}
-            <code className="font-mono text-ink">\</code> để tìm lệnh LaTeX từ A → Z.
-          </>
-        ) : (
-          <>
-            Đang chọn <strong className="font-semibold text-ink">Ký hiệu Unicode</strong>: bấm nút
-            hoặc gõ <code className="font-mono text-ink">\</code> trong ô nhập để tra cứu ký tự từ A
-            → Z (đổi sang <strong className="font-medium text-ink">Mathlib \</strong> hoặc{' '}
-            <strong className="font-medium text-ink">LaTeX</strong> để vẽ phân số 2 tầng).
-          </>
-        )}
-      </p>
-
       {/* Interactive Typing Guide & A -> Z Symbol Table */}
       {guideOpen ? (
         <div
@@ -374,19 +349,35 @@ export function MathSymbolToolbar({
         >
           <div className="space-y-1.5 border-b border-border pb-2.5 text-xs">
             <p className="font-semibold text-ink">
-              Hướng dẫn gõ nhanh (
+              Hướng dẫn gõ tốc ký <code className="font-mono">\</code> &amp; Render thời gian thực (
               {effectiveInsertMode === 'latex'
                 ? 'Chế độ LaTeX chuẩn'
                 : effectiveInsertMode === 'mathlib'
-                  ? 'Chế độ Mathlib \\ kiểu lập trình'
-                  : 'Mẹo: chuyển sang Mathlib \\ hoặc LaTeX để hiển thị công thức 2 tầng'}
+                  ? 'Chế độ Mathlib \\'
+                  : 'Chế độ Ký hiệu trực quan — tự render công thức ngay bên dưới'}
               )
             </p>
             {effectiveInsertMode === 'latex' ? (
               <ul className="grid grid-cols-1 gap-1.5 text-[11px] text-ink-secondary sm:grid-cols-2">
                 <li>
-                  • Phân số: <code className="font-mono text-ink">$\frac{'{1}{n}'}$</code> →{' '}
-                  <span dangerouslySetInnerHTML={{ __html: renderButtonLatex('\\frac{1}{n}') }} />
+                  • Giới hạn đa dạng: <code className="font-mono text-ink">\lim</code>,{' '}
+                  <code className="font-mono text-ink">\lima</code>,{' '}
+                  <code className="font-mono text-ink">\liminf</code>,{' '}
+                  <code className="font-mono text-ink">\lim+</code> →{' '}
+                  <span
+                    dangerouslySetInnerHTML={{
+                      __html: renderButtonLatex('\\lim_{x \\to a}, \\lim_{x \\to +\\infty}'),
+                    }}
+                  />
+                </li>
+                <li>
+                  • Phân số &amp; căn: <code className="font-mono text-ink">$\frac{'{1}{n}'}$</code>,{' '}
+                  <code className="font-mono text-ink">$\sqrt{'{x+1}'}$</code> →{' '}
+                  <span
+                    dangerouslySetInnerHTML={{
+                      __html: renderButtonLatex('\\frac{1}{n}, \\sqrt{x+1}'),
+                    }}
+                  />
                 </li>
                 <li>
                   • Lũy thừa &amp; chỉ số:{' '}
@@ -394,46 +385,49 @@ export function MathSymbolToolbar({
                   <span dangerouslySetInnerHTML={{ __html: renderButtonLatex('n^{n}, a_{n+1}') }} />
                 </li>
                 <li>
-                  • Ký hiệu hàm: <code className="font-mono text-ink">$\sigma{'{n^{n}}'}$</code> →{' '}
-                  <span dangerouslySetInnerHTML={{ __html: renderButtonLatex('\\sigma{n^{n}}') }} />
-                </li>
-                <li>
-                  • Gõ tắt khi đang viết: gõ <code className="font-mono text-ink">\si</code> sẽ lọc
-                  ngay <code className="font-mono text-ink">\sigma</code>,{' '}
-                  <code className="font-mono text-ink">\sin</code>…
+                  • Gõ tắt trực tiếp: gõ <code className="font-mono text-ink">\lim</code>,{' '}
+                  <code className="font-mono text-ink">\int</code>,{' '}
+                  <code className="font-mono text-ink">\si</code> rồi nhấn <kbd>Enter</kbd>/<kbd>Tab</kbd>.
                 </li>
               </ul>
             ) : (
               <ul className="grid grid-cols-1 gap-1.5 text-[11px] text-ink-secondary sm:grid-cols-2">
                 <li>
-                  • Phân số tự động: <code className="font-mono text-ink">\{'{1/n}'}</code> hoặc{' '}
-                  <code className="font-mono text-ink">\{'{(x+1)/(n+1)}'}</code> →{' '}
+                  • Giới hạn tổng quát &amp; một phía: <code className="font-mono text-ink">\lim</code>,{' '}
+                  <code className="font-mono text-ink">\lim+</code>,{' '}
+                  <code className="font-mono text-ink">lim x-&gt;a+</code>,{' '}
+                  <code className="font-mono text-ink">lim x-&gt;0-</code> →{' '}
                   <span
                     dangerouslySetInnerHTML={{
-                      __html: renderButtonLatex('\\frac{1}{n}, \\frac{x+1}{n+1}'),
+                      __html: renderButtonLatex('\\lim_{x \\to a^{+}} f(x), \\lim_{x \\to 0^{-}} f(x)'),
                     }}
                   />
                 </li>
                 <li>
-                  • Số mũ &amp; chỉ số: <code className="font-mono text-ink">\{'{n^(n)}'}</code>,{' '}
-                  <code className="font-mono text-ink">\{'{a_(n+1)}'}</code> →{' '}
-                  <span dangerouslySetInnerHTML={{ __html: renderButtonLatex('n^{n}, a_{n+1}') }} />
-                </li>
-                <li>
-                  • Lệnh kèm biểu thức:{' '}
-                  <code className="font-mono text-ink">\sigma{'{n^(n)}'}</code>,{' '}
-                  <code className="font-mono text-ink">\sin{'{x/2}'}</code> →{' '}
+                  • Phân số tự động: <code className="font-mono text-ink">(x+1)/(n+1)</code> hoặc{' '}
+                  <code className="font-mono text-ink">\{'{1/n}'}</code> →{' '}
                   <span
                     dangerouslySetInnerHTML={{
-                      __html: renderButtonLatex('\\sigma{n^{n}}, \\sin(x/2)'),
+                      __html: renderButtonLatex('\\frac{x+1}{n+1}, \\frac{1}{n}'),
                     }}
+                  />
+                </li>
+                <li>
+                  • Số mũ &amp; chỉ số: <code className="font-mono text-ink">x^2</code>,{' '}
+                  <code className="font-mono text-ink">a_n</code>,{' '}
+                  <code className="font-mono text-ink">\{'{n^(n)}'}</code> →{' '}
+                  <span
+                    dangerouslySetInnerHTML={{ __html: renderButtonLatex('x^2, a_n, n^{n}') }}
                   />
                 </li>
                 <li>
                   • Tổng &amp; tích phân có cận:{' '}
-                  <code className="font-mono text-ink">\sum{'{i=1..n}{1/i}'}</code> →{' '}
+                  <code className="font-mono text-ink">\sum</code>,{' '}
+                  <code className="font-mono text-ink">\intab</code> →{' '}
                   <span
-                    dangerouslySetInnerHTML={{ __html: renderButtonLatex('\\sum_{i=1}^{n} 1/i') }}
+                    dangerouslySetInnerHTML={{
+                      __html: renderButtonLatex('\\sum_{i=1}^{n}, \\int_{a}^{b} f(x)\\,dx'),
+                    }}
                   />
                 </li>
               </ul>
@@ -626,7 +620,7 @@ export function MathSymbolToolbar({
             <button
               key={sym.id}
               type="button"
-              title={`${sym.label}${
+              title={`${sym.label}${sym.shorthand ? ` · Gõ nhanh: ${sym.shorthand}` : ''}${
                 effectiveInsertMode === 'latex' ? ` (${sym.latexInsert.trim()})` : ''
               }`}
               aria-label={`Chèn ${sym.label}`}
@@ -634,7 +628,7 @@ export function MathSymbolToolbar({
                 event.preventDefault();
               }}
               onClick={() => onInsert(sym, effectiveInsertMode)}
-              className="inline-flex min-h-[38px] min-w-[38px] items-center justify-center rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-1 font-mono text-sm text-ink transition-colors hover:border-accent hover:bg-accent-subtle/60 hover:text-accent-ink active:scale-[0.97]"
+              className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-1 font-mono text-sm text-ink transition-colors hover:border-accent hover:bg-accent-subtle/60 hover:text-accent-ink active:scale-[0.97]"
             >
               <SymbolButtonVisual symbol={sym} />
             </button>
@@ -643,4 +637,4 @@ export function MathSymbolToolbar({
       )}
     </div>
   );
-}
+});

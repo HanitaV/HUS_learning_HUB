@@ -2,6 +2,11 @@ import { useState } from 'react';
 import type { DiagramRendererProps } from '../../contracts/diagram-module';
 import type { Curve2dStepSpec } from '../../domain/semi-essay';
 import { computeTrapezoidArea, gradeCurve2dStep, type Curve2dGradeResult } from '../../core/learning/curve-2d';
+import {
+  isPlainObject,
+  isStringArray,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 import Markdown from '../../components/learning/Markdown';
 
@@ -14,13 +19,42 @@ const PAD_B = 38;
 const PLOT_W = SVG_W - PAD_L - PAD_R;
 const PLOT_H = SVG_H - PAD_T - PAD_B;
 
-export default function Curve2dDiagram({ spec, onEvaluated }: DiagramRendererProps) {
+type SignMap = Readonly<Record<string, Readonly<Record<string, '+' | '-' | '0' | ''>>>>;
+
+interface Curve2dPersistedDraft {
+  readonly selectedIds: readonly string[];
+  readonly signMatrix: SignMap;
+}
+
+export default function Curve2dDiagram({ spec, draftKey, onEvaluated }: DiagramRendererProps) {
   const curveSpec = spec as Curve2dStepSpec;
-  const [selectedIds, setSelectedIds] = useState<readonly string[]>([]);
+  const [persisted, setPersisted, resetPersisted] = useInteractiveStepDraft<Curve2dPersistedDraft>(
+    draftKey,
+    () => ({ selectedIds: [], signMatrix: {} }),
+    raw => {
+      if (!isPlainObject(raw) || !isStringArray(raw.selectedIds, 60)) return null;
+      if (!isPlainObject(raw.signMatrix)) return null;
+      const signMatrix: Record<string, Record<string, '+' | '-' | '0' | ''>> = {};
+      for (const [rowKey, rowVal] of Object.entries(raw.signMatrix)) {
+        if (rowKey.length > 80 || !isPlainObject(rowVal)) return null;
+        const rowOut: Record<string, '+' | '-' | '0' | ''> = {};
+        for (const [colKey, colVal] of Object.entries(rowVal)) {
+          if (colKey.length > 80 || (colVal !== '+' && colVal !== '-' && colVal !== '0' && colVal !== '')) {
+            return null;
+          }
+          rowOut[colKey] = colVal;
+        }
+        signMatrix[rowKey] = rowOut;
+      }
+      return { selectedIds: raw.selectedIds, signMatrix };
+    },
+  );
+  const { selectedIds, signMatrix } = persisted;
+  const setSelectedIds = (updater: (prev: readonly string[]) => readonly string[]) =>
+    setPersisted(prev => ({ ...prev, selectedIds: updater(prev.selectedIds) }));
+  const setSignMatrix = (updater: (prev: SignMap) => SignMap) =>
+    setPersisted(prev => ({ ...prev, signMatrix: updater(prev.signMatrix) }));
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(curveSpec.segments[0]?.id ?? null);
-  const [signMatrix, setSignMatrix] = useState<
-    Readonly<Record<string, Readonly<Record<string, '+' | '-' | '0' | ''>>>>
-  >({});
   const [grade, setGrade] = useState<Curve2dGradeResult | null>(null);
 
   const mapX = (x: number) => PAD_L + (x / curveSpec.xMax) * PLOT_W;
@@ -59,8 +93,7 @@ export default function Curve2dDiagram({ spec, onEvaluated }: DiagramRendererPro
   };
 
   const handleReset = () => {
-    setSelectedIds([]);
-    setSignMatrix({});
+    resetPersisted();
     setGrade(null);
   };
 

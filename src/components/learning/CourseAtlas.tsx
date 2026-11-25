@@ -7,6 +7,7 @@ import type { LearningContent } from '../../domain/workspace';
 import { useLearningProgress } from '../../app/useLearningProgress';
 import { normalizeVietnamese } from '../../core/courses/search';
 import { courseLessons } from '../../core/learning/content';
+import { completedCourseLessonIds, isPracticeOnlyCourse } from '../../core/learning/progress';
 import { Badge } from '../ui/Badge';
 import { CourseDependencyGraph } from './CourseDependencyGraph';
 import {
@@ -44,6 +45,16 @@ export function CourseAtlas({
   initialChapterId,
 }: CourseAtlasProps) {
   const { progress } = useLearningProgress();
+  const practiceOnly = isPracticeOnlyCourse(course);
+  const allLessons = useMemo(() => courseLessons(content, course), [content, course]);
+  const effectiveCompletedIds = useMemo(
+    () => completedCourseLessonIds(course, allLessons, progress),
+    [course, allLessons, progress],
+  );
+  const effectiveCompletedSet = useMemo(
+    () => new Set(effectiveCompletedIds),
+    [effectiveCompletedIds],
+  );
   const hasChapters = course.chapterIds.length > 0;
   const validInitialChapterId =
     initialChapterId && course.chapterIds.includes(initialChapterId)
@@ -100,11 +111,11 @@ export function CourseAtlas({
 
   const isLessonMastered = useCallback(
     (lessonId: EntityId) => {
-      if (progress.completedLessonIds.includes(lessonId)) return true;
+      if (effectiveCompletedSet.has(lessonId)) return true;
       const lessonQuests = questsByLessonId.get(lessonId);
       return lessonQuests ? lessonQuests.some(q => completedQuestSet.has(q.id)) : false;
     },
-    [progress.completedLessonIds, questsByLessonId, completedQuestSet],
+    [effectiveCompletedSet, questsByLessonId, completedQuestSet],
   );
 
   const chaptersData = useMemo(() => {
@@ -145,7 +156,6 @@ export function CourseAtlas({
       });
   }, [course.chapterIds, content, isLessonMastered]);
 
-  const allLessons = useMemo(() => courseLessons(content, course), [content, course]);
   const totalExercises = useMemo(
     () => allLessons.reduce((sum, l) => sum + l.exerciseIds.length, 0),
     [allLessons],
@@ -267,7 +277,9 @@ export function CourseAtlas({
             </h2>
             <p className="text-sm text-ink-secondary">
               {hasChapters
-                ? `${chaptersData.length} chương · ${allLessons.length} bài chia chặng${(courseQuests?.length ?? 0) > 0 ? ` · ${courseQuests?.length ?? 0} nhiệm vụ 4 mốc` : ''}${totalExercises > 0 ? ` · ${totalExercises} bài tập` : ''}. Chọn chương hoặc chạm vào từng trạm để học tương tác.`
+                ? practiceOnly
+                  ? `${chaptersData.length} chương · ${allLessons.length} trạm bài tập${totalExercises > 0 ? ` · ${totalExercises} câu luyện tập` : ''}. Bỏ qua học lý thuyết — chọn chương hoặc trạm để vào giải bài tập ngay.`
+                  : `${chaptersData.length} chương · ${allLessons.length} bài chia chặng${(courseQuests?.length ?? 0) > 0 ? ` · ${courseQuests?.length ?? 0} nhiệm vụ 4 mốc` : ''}${totalExercises > 0 ? ` · ${totalExercises} bài tập` : ''}. Chọn chương hoặc chạm vào từng trạm để học tương tác.`
                 : 'Học phần đang ở trạng thái thông tin gốc, chưa có chương bài học tích hợp.'}
             </p>
           </div>
@@ -457,7 +469,7 @@ export function CourseAtlas({
             <CourseDependencyGraph
               course={course}
               content={content}
-              completedLessonIds={progress.completedLessonIds}
+              completedLessonIds={effectiveCompletedIds}
               completedQuestIds={completedQuestIds}
               courseQuests={courseQuests}
               writtenByLessonId={writtenByLessonId}

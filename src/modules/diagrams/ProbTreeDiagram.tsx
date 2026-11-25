@@ -7,23 +7,58 @@ import {
   type ProbTreeBranchInput,
   type ProbTreeGradeResult,
 } from '../../core/learning/hybrid-diagrams';
+import {
+  isPlainObject,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import Markdown from '../../components/learning/Markdown';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
-export default function ProbTreeDiagram({ spec, completed, onEvaluated }: DiagramRendererProps) {
+export default function ProbTreeDiagram({
+  spec,
+  completed,
+  draftKey,
+  onEvaluated,
+}: DiagramRendererProps) {
   const treeSpec = spec as ProbTreeStepSpec;
-  const [inputs, setInputs] = useState<Readonly<Record<string, ProbTreeBranchInput>>>(() =>
-    Object.fromEntries(
-      treeSpec.branches.map(b => [
-        b.id,
-        completed
-          ? {
-              prior: String(Number(b.expectedPrior.toFixed(4))),
-              conditional: String(Number(b.expectedConditional.toFixed(4))),
-            }
-          : { prior: '', conditional: '' },
-      ]),
-    ),
+  const [inputs, setInputs, resetInputs] = useInteractiveStepDraft<
+    Readonly<Record<string, ProbTreeBranchInput>>
+  >(
+    draftKey,
+    () =>
+      Object.fromEntries(
+        treeSpec.branches.map(b => [
+          b.id,
+          completed
+            ? {
+                prior: String(Number(b.expectedPrior.toFixed(4))),
+                conditional: String(Number(b.expectedConditional.toFixed(4))),
+              }
+            : { prior: '', conditional: '' },
+        ]),
+      ),
+    raw => {
+      if (!isPlainObject(raw)) return null;
+      const out: Record<string, ProbTreeBranchInput> = {};
+      for (const b of treeSpec.branches) {
+        const entry = raw[b.id];
+        if (entry === undefined) {
+          out[b.id] = { prior: '', conditional: '' };
+          continue;
+        }
+        if (
+          !isPlainObject(entry) ||
+          typeof entry.prior !== 'string' ||
+          typeof entry.conditional !== 'string' ||
+          entry.prior.length > 80 ||
+          entry.conditional.length > 80
+        ) {
+          return null;
+        }
+        out[b.id] = { prior: entry.prior, conditional: entry.conditional };
+      }
+      return out;
+    },
   );
   const [grade, setGrade] = useState<ProbTreeGradeResult | null>(null);
 
@@ -50,9 +85,7 @@ export default function ProbTreeDiagram({ spec, completed, onEvaluated }: Diagra
   };
 
   const handleReset = () => {
-    setInputs(
-      Object.fromEntries(treeSpec.branches.map(b => [b.id, { prior: '', conditional: '' }])),
-    );
+    resetInputs();
     setGrade(null);
   };
 

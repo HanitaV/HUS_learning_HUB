@@ -30,6 +30,10 @@ test('template workspace navigation, theme persistence, and notices work without
   await page.goto('./#/courses');
   await expect(page.getByRole('heading', { name: 'Danh mục học phần' })).toBeVisible();
 
+  // Exam practice page renders clean empty state with 0 courses
+  await page.goto('./#/exams');
+  await expect(page.getByRole('heading', { name: 'Chưa có học phần để tạo đề luyện' })).toBeVisible();
+
   // Legacy /resources redirects smoothly to homepage
   await page.goto('./#/resources');
   await expect(page.getByRole('heading', { name: 'Học phần', exact: true })).toBeVisible();
@@ -55,7 +59,7 @@ test('has no horizontal overflow across representative viewport widths', async (
     window.localStorage.setItem('hus-learning-hub:small-screen-ack:v1', '1');
   });
   const widths = [360, 390, 768, 1024, 1440];
-  const routes = ['./', './#/courses', './#/progress', './#/settings'];
+  const routes = ['./', './#/courses', './#/exams', './#/progress', './#/settings'];
 
   for (const width of widths) {
     await page.setViewportSize({ width, height: 844 });

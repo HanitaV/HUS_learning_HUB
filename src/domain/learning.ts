@@ -22,6 +22,8 @@ export interface Course {
   readonly title: string;
   readonly language: string;
   readonly status: 'metadata-only' | 'available';
+  /** When `'practice-only'`, skips guided theory stages and centers lessons/progress directly on solving exercises. */
+  readonly studyMode?: 'default' | 'practice-only';
   readonly chapterIds: readonly EntityId[];
   readonly resourceIds: readonly EntityId[];
   readonly provenance: Provenance;

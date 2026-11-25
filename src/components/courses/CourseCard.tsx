@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import type { Course, Subject } from '../../domain/learning';
+import { isPracticeOnlyCourse } from '../../core/learning/progress';
 import { Badge } from '../ui/Badge';
 import { ChevronRightIcon } from '../ui/Icons';
 import { AtomicCourseEmblem } from './AtomicCourseEmblem';
@@ -20,6 +21,7 @@ export function CourseCard({
   progressPercent,
 }: CourseCardProps) {
   const isAvailable = course.status === 'available';
+  const practiceOnly = isPracticeOnlyCourse(course);
   const statusLabel = isAvailable ? 'Có nội dung học' : 'Chỉ có thông tin học phần';
   const code = course.academicCode ?? course.id.toUpperCase();
   const metaSummary =
@@ -50,6 +52,7 @@ export function CourseCard({
                   <span className="text-xs font-medium text-ink-muted">{subject.title}</span>
                 ) : null}
                 <Badge tone={isAvailable ? 'success' : 'warning'}>{statusLabel}</Badge>
+                {practiceOnly ? <Badge tone="neutral">Chỉ luyện bài tập</Badge> : null}
               </div>
               <h3 className="text-base font-semibold text-ink transition-colors duration-300 ease-[var(--hus-ease)] group-hover:text-accent">
                 {course.title}
@@ -92,6 +95,7 @@ export function CourseCard({
                 {code}
               </Badge>
               <Badge tone={isAvailable ? 'success' : 'warning'}>{statusLabel}</Badge>
+              {practiceOnly ? <Badge tone="neutral">Chỉ luyện bài tập</Badge> : null}
             </div>
           </div>
 

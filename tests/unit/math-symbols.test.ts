@@ -47,8 +47,8 @@ describe('math-symbols catalog & resolver', () => {
   it('allows learners to streamline symbols per chapter and per course and reset to defaults', () => {
     const ctx = {
       subjectId: 'mathematics',
-      courseId: 'mat1091',
-      chapterId: 'mat1091-ch3',
+      courseId: 'sample-calc',
+      chapterId: 'sample-calc-ch1',
     };
     let prefs = createDefaultMathSymbolPreferences();
 
@@ -80,36 +80,42 @@ describe('math-symbols catalog & resolver', () => {
   });
 
   it('prevents removing the last remaining symbol in a scope', () => {
-    const ctx = { courseId: 'mat1091', chapterId: 'mat1091-ch3' };
+    const ctx = { courseId: 'sample-calc', chapterId: 'sample-calc-ch1' };
     const singlePrefs = {
       ...createDefaultMathSymbolPreferences(),
-      byChapter: { 'mat1091-ch3': ['integral'] },
+      byChapter: { 'sample-calc-ch1': ['integral'] },
     };
     const next = toggleSymbolForScope(singlePrefs, mathSymbolCatalog, ctx, 'chapter', 'integral');
-    expect(next.byChapter['mat1091-ch3']).toEqual(['integral']);
+    expect(next.byChapter['sample-calc-ch1']).toEqual(['integral']);
   });
 
-  it('inserts Unicode and LaTeX snippets at cursor with accurate caret offsets, selection wrapping, and auto-$ wrapping', () => {
+  it('inserts Unicode, Mathlib, and LaTeX snippets at cursor with accurate caret offsets, selection wrapping, and auto-$ wrapping', () => {
     const frac = mathSymbolCatalog.symbols.find(s => s.id === 'frac')!;
     const bigO = mathSymbolCatalog.symbols.find(s => s.id === 'big-o')!;
     const integral = mathSymbolCatalog.symbols.find(s => s.id === 'integral')!;
 
     const uni = insertMathSymbolAtCursor('T(n) = ', 7, 7, bigO, 'unicode');
     expect(uni.value).toBe('T(n) = O()');
-    expect(uni.selectionStart).toBe(9); // inside O(|)
+    expect(uni.selectionStart).toBe(9);
     expect(uni.selectionEnd).toBe(9);
 
     // Highlighted text gets wrapped inside the numerator of \frac{selected}{}
     const latexWrapped = insertMathSymbolAtCursor('x + 1', 0, 5, frac, 'latex');
     expect(latexWrapped.value).toBe('\\frac{x + 1}{}');
-    expect(latexWrapped.selectionStart).toBe(13); // inside denominator {|}
+    expect(latexWrapped.selectionStart).toBe(13);
+
+    // Mathlib \ mode uses unified catalog snippet directly
+    const limSym = mathSymbolCatalog.symbols.find(s => s.id === 'lim')!;
+    const mathlibLim = insertMathSymbolAtCursor('', 0, 0, limSym, 'mathlib');
+    expect(mathlibLim.value).toBe('\\lim{x->}{}');
+    expect(mathlibLim.selectionStart).toBe(8);
 
     // Auto-$ wrapping outside math mode
     const autoDollar = insertMathSymbolAtCursor('Ta có ', 6, 6, integral, 'latex', {
       wrapLatexWithDollars: true,
     });
     expect(autoDollar.value).toBe('Ta có $\\int_{}^{}  \\,dx$');
-    expect(autoDollar.selectionStart).toBe(13); // inside lower limit \int_{|}^{}
+    expect(autoDollar.selectionStart).toBe(13);
 
     // Already inside $...$ does not double-wrap
     const insideDollar = insertMathSymbolAtCursor('$f(x) = $', 8, 8, frac, 'latex', {
@@ -119,8 +125,11 @@ describe('math-symbols catalog & resolver', () => {
     expect(insideDollar.selectionStart).toBe(14);
   });
 
-  it('includes structured templates for fractions, derivatives, integrals, powers, roots, and systems', () => {
+  it('includes structured templates and 1-to-1 \\ shorthands across all toolbar symbols', () => {
     const byId = new Map(mathSymbolCatalog.symbols.map(s => [s.id, s]));
+    for (const sym of mathSymbolCatalog.symbols) {
+      expect(sym.shorthand, `${sym.id}.shorthand`).toMatch(/^\\.+/);
+    }
     for (const id of [
       'frac',
       'power',

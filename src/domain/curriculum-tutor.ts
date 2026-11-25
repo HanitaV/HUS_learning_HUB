@@ -16,7 +16,46 @@ export interface CourseConventionCanon {
   readonly courseTitle: string;
   readonly notationRules: readonly string[];
   readonly forbiddenShortcutHints: readonly string[];
+  readonly presentationCheckpoints?: readonly string[] | undefined;
   readonly reasoningScaffolds: readonly ReasoningScaffoldTemplate[];
+}
+
+export type StepCoachingLifecycleState =
+  | 'unstarted'
+  | 'drafted'
+  | 'needs-revision'
+  | 'revised-pending-recheck'
+  | 'verified';
+
+export interface LessonWebMcpContextPacket {
+  readonly schemaVersion: 1;
+  readonly generatedAt: string;
+  readonly course: {
+    readonly id: EntityId;
+    readonly code: string;
+    readonly title: string;
+    readonly practiceOnly: boolean;
+    readonly notationRules: readonly string[];
+    readonly forbiddenShortcutHints: readonly string[];
+  };
+  readonly syllabusHorizon: {
+    readonly currentChapter: string;
+    readonly currentLesson: string;
+    readonly allowedPrerequisites: readonly string[];
+    readonly unlearnedChaptersDoNotUse: readonly string[];
+  };
+  readonly activeLessonSection?: {
+    readonly sectionTitle: string;
+    readonly excerptMarkdown: string;
+  } | undefined;
+  readonly focusedExercise?: {
+    readonly id: EntityId;
+    readonly title: string;
+    readonly kind: string;
+    readonly prompt: string;
+    readonly studentAttemptSummary?: string | undefined;
+  } | undefined;
+  readonly pedagogicalContract: readonly string[];
 }
 
 export type SyllabusRelation =
@@ -65,7 +104,7 @@ export interface CurriculumSearchHit {
   readonly matchedTerms: readonly string[];
 }
 
-export type CoachingPromptMode = 'socratic-hint' | 'rubric-review';
+export type CoachingPromptMode = 'socratic-hint' | 'rubric-review' | 'presentation-review';
 
 export interface GroundedEssayContextPacket {
   readonly schemaVersion: 1;
@@ -90,6 +129,7 @@ export interface GroundedEssayContextPacket {
     readonly problemPrompt: string;
     readonly given: readonly GivenQuantity[];
     readonly theoryAnchors: readonly TheoryAnchor[];
+    readonly visualContextSummary?: readonly string[] | undefined;
   };
   readonly activeStep: {
     readonly id: EntityId;
@@ -117,6 +157,8 @@ export interface GroundedEssayContextPacket {
 
 export type TutorCriterionStatus = 'met' | 'partial' | 'missing';
 
+export type TutorAssessmentVerdict = 'pass' | 'not-pass';
+
 export interface TutorCriterionFeedback {
   readonly criterionId: string;
   readonly status: TutorCriterionStatus;
@@ -130,6 +172,9 @@ export interface TutorCoachingFeedback {
   readonly source: 'webmcp' | 'clipboard';
   readonly receivedAt: string;
   readonly summary: string;
+  readonly verdict?: TutorAssessmentVerdict | undefined;
+  readonly score?: number | undefined;
+  readonly maxScore?: number | undefined;
   readonly socraticQuestions: readonly string[];
   readonly criterionFeedback: readonly TutorCriterionFeedback[];
   readonly conventionWarnings: readonly string[];

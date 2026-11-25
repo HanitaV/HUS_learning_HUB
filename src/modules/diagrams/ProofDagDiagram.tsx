@@ -3,11 +3,20 @@ import type { DiagramRendererProps } from '../../contracts/diagram-module';
 import type { ProofDagStepSpec } from '../../domain/semi-essay';
 import type { ProofBlocksExercise, ProofGradeResult } from '../../domain/block-logic';
 import { gradeProofBlocks } from '../../core/blocks/proof-dag';
+import {
+  isStringArray,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import Markdown from '../../components/learning/Markdown';
 import { Badge } from '../../components/ui/Badge';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
-export default function ProofDagDiagram({ spec, completed, onEvaluated }: DiagramRendererProps) {
+export default function ProofDagDiagram({
+  spec,
+  completed,
+  draftKey,
+  onEvaluated,
+}: DiagramRendererProps) {
   const dagSpec = spec as ProofDagStepSpec;
 
   const syntheticExercise = useMemo<ProofBlocksExercise>(
@@ -22,10 +31,18 @@ export default function ProofDagDiagram({ spec, completed, onEvaluated }: Diagra
     [dagSpec],
   );
 
-  const [selectedIds, setSelectedIds] = useState<readonly string[]>(() =>
-    completed
-      ? dagSpec.blocks.filter(b => !b.isDistractor && b.role !== 'distractor').map(b => b.id)
-      : [],
+  const validBlockIds = useMemo(
+    () => new Set(dagSpec.blocks.map(b => b.id)),
+    [dagSpec.blocks],
+  );
+
+  const [selectedIds, setSelectedIds, resetSelectedIds] = useInteractiveStepDraft<readonly string[]>(
+    draftKey,
+    () =>
+      completed
+        ? dagSpec.blocks.filter(b => !b.isDistractor && b.role !== 'distractor').map(b => b.id)
+        : [],
+    raw => (isStringArray(raw) && raw.every(id => validBlockIds.has(id)) ? raw : null),
   );
   const [grade, setGrade] = useState<ProofGradeResult | null>(null);
 
@@ -73,7 +90,7 @@ export default function ProofDagDiagram({ spec, completed, onEvaluated }: Diagra
   };
 
   const handleReset = () => {
-    setSelectedIds([]);
+    resetSelectedIds();
     setGrade(null);
   };
 

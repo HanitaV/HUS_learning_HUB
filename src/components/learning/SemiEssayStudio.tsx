@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type {
   CoachingPromptMode,
@@ -11,13 +11,7 @@ import type {
 import type { EntityId } from '../../domain/learning';
 import type { MathSymbolContext } from '../../domain/math-symbols';
 import type {
-  AxisProjectionStep,
-  ChoiceReasoningStep,
-  DiagramStep,
-  EquationTransformStep,
-  NumericUnitStep,
   SemiEssayExercise,
-  SemiEssayStep,
   WrittenReasoningStep,
 } from '../../domain/semi-essay';
 import {
@@ -27,18 +21,13 @@ import {
   synthesizeFallbackTheoryAnchors,
 } from '../../core/learning/curriculum-rag';
 import {
+  didExercisePassViaTutor,
+  syncCriteriaFromCoachingFeedback,
+} from '../../core/learning/webmcp-essay-adapters';
+import {
   buildSynthesizedEssay,
   emptyWrittenStepDraft,
-  evaluateAxisProjectionStep,
-  evaluateChoiceReasoningStep,
-  evaluateEquationTransformMove,
-  evaluateNumericUnitStep,
   evaluateWrittenReasoningReview,
-  type AxisProjectionEvaluation,
-  type AxisProjectionSelection,
-  type ChoiceReasoningEvaluation,
-  type EquationTransformMoveEvaluation,
-  type NumericUnitEvaluation,
 } from '../../core/learning/semi-essay';
 import {
   loadStoredTutorFeedback,
@@ -49,10 +38,15 @@ import {
   detectWebMcpSupport,
   registerEssayWebMcpTools,
 } from '../../infrastructure/ai/webmcp-essay-bridge';
-import { getDiagramModule } from '../../modules/diagrams/registry';
+import {
+  clearInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
+import {
+  loadCompletedSemiEssaySteps,
+  saveCompletedSemiEssaySteps,
+} from '../../infrastructure/practice/semi-essay-step-progress';
 import { Badge } from '../ui/Badge';
 import {
-  AlertCircleIcon,
   ArrowLeftIcon,
   CheckCircleIcon,
   CheckIcon,
@@ -61,6 +55,11 @@ import {
 } from '../ui/Icons';
 import Markdown from './Markdown';
 import { NotebookLmExportControl } from './NotebookLmExportControl';
+import { RealtimeMathPreview } from './RealtimeMathPreview';
+import {
+  SemiEssayInteractiveStepBody,
+  STEP_KIND_LABEL,
+} from './SemiEssayInteractiveSteps';
 import { TheoryReferenceRail } from './TheoryReferenceRail';
 import { WrittenReasoningStepView } from './WrittenReasoningStepView';
 import { useMathSymbolPreferences } from '../../app/useMathSymbolPreferences';
@@ -82,16 +81,8 @@ export interface SemiEssayStudioProps {
   readonly previouslySolved: boolean;
   readonly symbolContext?: MathSymbolContext | undefined;
   readonly onCompleteExercise: (outcome: 'graded' | 'self-reviewed') => void;
+  readonly onRecordTutorAttempt?: ((passed: boolean, at: string) => void) | undefined;
 }
-
-const STEP_KIND_LABEL: Record<SemiEssayStep['kind'], string> = {
-  'choice-reasoning': 'Lập luận định tính',
-  diagram: 'Biểu đồ tương tác',
-  'axis-projection': 'Chiếu trục tọa độ',
-  'equation-transform': 'Biến đổi phương trình',
-  'numeric-unit': 'Tính toán & kiểm chứng',
-  'written-reasoning': 'Tự viết lập luận',
-};
 
 export function SemiEssayStudio({
   exercise,
@@ -105,12 +96,15 @@ export function SemiEssayStudio({
   previouslySolved,
   symbolContext,
   onCompleteExercise,
+  onRecordTutorAttempt,
 }: SemiEssayStudioProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [visitedStepIds, setVisitedStepIds] = useState<readonly string[]>(
     exercise.steps[0] ? [exercise.steps[0].id] : [],
   );
-  const [completedStepIds, setCompletedStepIds] = useState<readonly string[]>([]);
+  const [completedStepIds, setCompletedStepIds] = useState<readonly string[]>(() =>
+    loadCompletedSemiEssaySteps(exercise),
+  );
   const { preferences: mathPreferences } = useMathSymbolPreferences();
   const { drafts, updateDraft, resetDrafts, error } = useWrittenDrafts(exercise);
   const [resetVersion, setResetVersion] = useState(0);
@@ -139,18 +133,40 @@ export function SemiEssayStudio({
   const activeStep = exercise.steps[activeIndex] ?? exercise.steps[0];
   const fadeLevel = exercise.fadeLevel ?? 0;
 
-  // Auto-populate TheoryReferenceRail from verified lesson chunks when `exercise.theoryAnchors` is empty
   const resolvedTheory = useMemo(
     () => synthesizeFallbackTheoryAnchors(curriculumChunks, exercise, activeIndex),
     [curriculumChunks, exercise, activeIndex],
   );
 
   const applyCoachingFeedback = (feedback: TutorCoachingFeedback) => {
+    const nextPreview = { ...coachingByStepId, [feedback.stepId]: feedback };
+    const passVerdict = didExercisePassViaTutor(exercise, nextPreview);
+    if (passVerdict === false) {
+      onRecordTutorAttempt?.(false, feedback.receivedAt);
+    } else if (passVerdict === true) {
+      const nonWrittenAllDone = exercise.steps
+        .filter(s => s.kind !== 'written-reasoning')
+        .every(s => completedSet.has(s.id));
+      if (nonWrittenAllDone) {
+        onRecordTutorAttempt?.(true, feedback.receivedAt);
+      }
+    }
     setCoachingByStepId(prev => {
       const next = { ...prev, [feedback.stepId]: feedback };
       saveStoredTutorFeedback(exercise.id, next);
       return next;
     });
+    const currentDraft = drafts[feedback.stepId] ?? emptyWrittenStepDraft();
+    const syncedCriteria = syncCriteriaFromCoachingFeedback(
+      currentDraft.reviewedCriterionIds,
+      feedback,
+    );
+    if (
+      syncedCriteria.length !== currentDraft.reviewedCriterionIds.length ||
+      !syncedCriteria.every((id, idx) => id === currentDraft.reviewedCriterionIds[idx])
+    ) {
+      updateDraft(feedback.stepId, { reviewedCriterionIds: syncedCriteria });
+    }
   };
 
   const clearStepCoaching = (stepId: string) => {
@@ -162,7 +178,11 @@ export function SemiEssayStudio({
     });
   };
 
-  const buildStepPacket = (step: WrittenReasoningStep, stepNumber: number, mode: CoachingPromptMode) => {
+  const buildStepPacket = (
+    step: WrittenReasoningStep,
+    stepNumber: number,
+    mode: CoachingPromptMode,
+  ) => {
     if (!canon) return null;
     return buildGroundedEssayContextPacket({
       mode,
@@ -177,7 +197,6 @@ export function SemiEssayStudio({
     });
   };
 
-  // Keep live bindings in a ref so WebMCP tools never tear down on keystrokes
   const liveBridgeRef = useRef({
     exercise,
     activeStep,
@@ -234,6 +253,7 @@ export function SemiEssayStudio({
       ? completedStepIds
       : [...completedStepIds, stepId];
     setCompletedStepIds(nextCompleted);
+    saveCompletedSemiEssaySteps(exercise.id, nextCompleted);
 
     if (new Set([...completedSet, stepId]).size === exercise.steps.length && !exerciseFinished) {
       onCompleteExercise(hasWrittenSteps ? 'self-reviewed' : 'graded');
@@ -244,7 +264,13 @@ export function SemiEssayStudio({
     setActiveIndex(0);
     setVisitedStepIds(exercise.steps[0] ? [exercise.steps[0].id] : []);
     setCompletedStepIds([]);
+    saveCompletedSemiEssaySteps(exercise.id, []);
     resetDrafts();
+    for (const step of exercise.steps) {
+      if (step.kind !== 'written-reasoning') {
+        clearInteractiveStepDraft(`${exercise.id}:${step.id}`);
+      }
+    }
     setCoachingByStepId({});
     saveStoredTutorFeedback(exercise.id, {});
     setResetVersion(v => v + 1);
@@ -278,7 +304,6 @@ export function SemiEssayStudio({
 
   return (
     <div className="space-y-6">
-      {/* Top Studio Header */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -323,10 +348,11 @@ export function SemiEssayStudio({
           {error}
         </p>
       ) : null}
-      {/* Main 2-Column Parallel Workspace */}
+
       <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,42fr)_minmax(0,58fr)] lg:items-start">
         <TheoryReferenceRail
           problemPrompt={exercise.prompt}
+          figure={exercise.figure}
           given={exercise.given}
           theoryAnchors={resolvedTheory.anchors}
           activeAnchorIds={resolvedTheory.activeAnchorIds}
@@ -335,7 +361,6 @@ export function SemiEssayStudio({
           lessonUrl={lessonUrl}
         />
 
-        {/* Right column: Semi-essay step timeline */}
         <div key={resetVersion} className="min-w-0 space-y-4">
           <ol className="min-w-0 space-y-3" aria-label="Các bước giải tự luận">
             {exercise.steps.map((step, idx) => {
@@ -355,7 +380,6 @@ export function SemiEssayStudio({
                         : 'border-border bg-surface-subtle/40'
                   }`}
                 >
-                  {/* Step Header Button */}
                   <button
                     type="button"
                     disabled={!isUnlocked}
@@ -402,7 +426,6 @@ export function SemiEssayStudio({
                     </div>
                   </button>
 
-                  {/* Active Step Workspace */}
                   {visitedStepIds.includes(step.id) ? (
                     <div
                       hidden={!isActive}
@@ -449,10 +472,11 @@ export function SemiEssayStudio({
                           }}
                         />
                       ) : (
-                        <StepBody
+                        <SemiEssayInteractiveStepBody
                           step={step}
                           completed={isDone}
                           fadeLevel={fadeLevel}
+                          draftKey={`${exercise.id}:${step.id}`}
                           onSolved={() => markStepCompleted(step.id)}
                         />
                       )}
@@ -481,7 +505,6 @@ export function SemiEssayStudio({
             })}
           </ol>
 
-          {/* Synthesized Full Essay Solution once all steps are completed */}
           {exerciseFinished ? (
             <section
               aria-labelledby="synthesized-essay-heading"
@@ -550,12 +573,10 @@ export function SemiEssayStudio({
                         <p className="mb-1 text-xs font-semibold text-ink">
                           Phần {sIdx + 1}: {step.title}
                         </p>
-                        <Markdown>
-                          {renderTextByMathMode(
-                            drafts[step.id]?.revision || '',
-                            mathPreferences.insertMode,
-                          )}
-                        </Markdown>
+                        <RealtimeMathPreview
+                          value={drafts[step.id]?.revision || ''}
+                          mode={mathPreferences.insertMode}
+                        />
                       </div>
                     ))}
                 </div>
@@ -569,612 +590,6 @@ export function SemiEssayStudio({
           ) : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-function StepBody({
-  step,
-  completed,
-  fadeLevel,
-  onSolved,
-}: {
-  readonly step: Exclude<SemiEssayStep, { kind: 'written-reasoning' }>;
-  readonly completed: boolean;
-  readonly fadeLevel: 0 | 1 | 2;
-  readonly onSolved: () => void;
-}) {
-  if (step.kind === 'choice-reasoning') {
-    return <ChoiceReasoningStepView step={step} onSolved={onSolved} />;
-  }
-  if (step.kind === 'diagram') {
-    return <DiagramStepView step={step} completed={completed} fadeLevel={fadeLevel} onSolved={onSolved} />;
-  }
-  if (step.kind === 'axis-projection') {
-    return <AxisProjectionStepView step={step} onSolved={onSolved} />;
-  }
-  if (step.kind === 'equation-transform') {
-    return <EquationTransformStepView step={step} onSolved={onSolved} />;
-  }
-  return <NumericUnitStepView step={step} onSolved={onSolved} />;
-}
-
-function ChoiceReasoningStepView({
-  step,
-  onSolved,
-}: {
-  readonly step: ChoiceReasoningStep;
-  readonly onSolved: () => void;
-}) {
-  const [selected, setSelected] = useState<readonly string[]>([]);
-  const [evaluation, setEvaluation] = useState<ChoiceReasoningEvaluation | null>(null);
-  const [showHint, setShowHint] = useState(false);
-
-  const toggle = (id: string) => {
-    setEvaluation(null);
-    if (step.multiSelect) {
-      setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
-    } else {
-      setSelected([id]);
-    }
-  };
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    if (selected.length === 0) return;
-    const res = evaluateChoiceReasoningStep(step, selected);
-    setEvaluation(res);
-    if (res.correct) onSolved();
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <fieldset className="space-y-2 border-0 p-0">
-        <legend className="sr-only">{step.title}</legend>
-        {step.choices.map(choice => {
-          const isChecked = selected.includes(choice.id);
-          return (
-            <label
-              key={choice.id}
-              className={`flex min-h-[44px] cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border px-3.5 py-2.5 text-sm transition-colors ${
-                isChecked
-                  ? 'border-accent bg-accent-subtle font-medium text-accent-ink'
-                  : 'border-border bg-canvas/60 text-ink hover:border-border-strong'
-              }`}
-            >
-              <input
-                type={step.multiSelect ? 'checkbox' : 'radio'}
-                name={step.id}
-                checked={isChecked}
-                onChange={() => toggle(choice.id)}
-                className="mt-1 h-4 w-4 shrink-0 accent-[var(--hus-accent)]"
-              />
-              <span className="min-w-0 flex-1 leading-relaxed">
-                <Markdown inline>{choice.label}</Markdown>
-              </span>
-            </label>
-          );
-        })}
-      </fieldset>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="submit" disabled={selected.length === 0} className="hus-btn hus-btn-primary">
-          Kiểm tra lập luận
-        </button>
-        {step.hint ? (
-          <button
-            type="button"
-            onClick={() => setShowHint(v => !v)}
-            className="hus-btn hus-btn-secondary"
-          >
-            {showHint ? 'Ẩn gợi ý' : 'Xem gợi ý'}
-          </button>
-        ) : null}
-      </div>
-
-      {showHint && step.hint ? (
-        <p className="rounded-[var(--radius-md)] border border-border bg-surface-subtle px-3.5 py-2.5 text-xs text-ink-secondary">
-          <Markdown inline>{step.hint}</Markdown>
-        </p>
-      ) : null}
-
-      {evaluation ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`space-y-1.5 rounded-[var(--radius-md)] border px-4 py-3 text-sm ${
-            evaluation.correct
-              ? 'border-success/35 bg-success-subtle text-success'
-              : 'border-danger/35 bg-danger-subtle text-ink'
-          }`}
-        >
-          <div className="flex items-start gap-2 font-medium">
-            {evaluation.correct ? (
-              <CheckCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-success" />
-            ) : (
-              <AlertCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-danger" />
-            )}
-            <span>{evaluation.correct ? 'Lập luận chính xác!' : 'Lập luận chưa khớp bản chất vật lý:'}</span>
-          </div>
-          {evaluation.rationales.map(item => (
-            <div key={item.choiceId} className="pl-6 text-xs leading-relaxed text-ink-secondary">
-              <Markdown inline>{item.rationale}</Markdown>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </form>
-  );
-}
-
-function DiagramStepView({
-  step,
-  completed,
-  fadeLevel,
-  onSolved,
-}: {
-  readonly step: DiagramStep;
-  readonly completed: boolean;
-  readonly fadeLevel: 0 | 1 | 2;
-  readonly onSolved: () => void;
-}) {
-  const LazyDiagram = useMemo(() => lazy(getDiagramModule(step.diagramKind).load), [step.diagramKind]);
-
-  return (
-    <Suspense
-      fallback={
-        <div
-          role="status"
-          aria-label="Đang tải biểu đồ tương tác"
-          className="h-64 animate-pulse rounded-[var(--radius-lg)] border border-border bg-surface-subtle"
-        />
-      }
-    >
-      <LazyDiagram
-        spec={step.spec}
-        completed={completed}
-        fadeLevel={fadeLevel}
-        onEvaluated={res => {
-          if (res.correct) onSolved();
-        }}
-      />
-    </Suspense>
-  );
-}
-
-function AxisProjectionStepView({
-  step,
-  onSolved,
-}: {
-  readonly step: AxisProjectionStep;
-  readonly onSolved: () => void;
-}) {
-  const [selections, setSelections] = useState<
-    Readonly<Record<string, Readonly<Record<string, AxisProjectionSelection>>>>
-  >({});
-  const [evaluation, setEvaluation] = useState<AxisProjectionEvaluation | null>(null);
-
-  const setCell = (axisId: string, forceId: string, patch: Partial<AxisProjectionSelection>) => {
-    setEvaluation(null);
-    setSelections(prev => {
-      const axisPrev = prev[axisId] ?? {};
-      const rowPrev = axisPrev[forceId] ?? { sign: '', component: '' };
-      return {
-        ...prev,
-        [axisId]: {
-          ...axisPrev,
-          [forceId]: { ...rowPrev, ...patch },
-        },
-      };
-    });
-  };
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const res = evaluateAxisProjectionStep(step, selections);
-    setEvaluation(res);
-    if (res.correct) onSolved();
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {step.contextNote ? <p className="text-xs text-ink-muted">{step.contextNote}</p> : null}
-
-      {step.axes.map(axis => (
-        <div key={axis.id} className="space-y-2.5 rounded-[var(--radius-lg)] border border-border bg-canvas/70 p-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-            <h4 className="text-sm font-semibold text-ink">{axis.label}</h4>
-            <span className="text-xs text-ink-muted">
-              Vế phải: <Markdown inline>{`$${axis.rhsLatex}$`}</Markdown>
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {axis.rows.map(row => {
-              const current = selections[axis.id]?.[row.forceId] ?? { sign: '', component: '' };
-              return (
-                <div
-                  key={row.forceId}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 text-sm"
-                >
-                  <span className="min-w-[3.5rem] font-medium text-ink">
-                    <Markdown inline>{`$${row.forceLatex}$`}</Markdown>
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div role="group" aria-label={`Dấu chiếu của ${row.forceId} trên ${axis.label}`} className="flex gap-1">
-                      {(['+', '-', '0'] as const).map(sign => (
-                        <button
-                          key={sign}
-                          type="button"
-                          aria-pressed={current.sign === sign}
-                          onClick={() =>
-                            setCell(axis.id, row.forceId, {
-                              sign,
-                              ...(sign === '0' ? { component: '0' } : {}),
-                            })
-                          }
-                          className={`min-h-[38px] min-w-[38px] cursor-pointer rounded border font-mono text-xs font-semibold ${
-                            current.sign === sign
-                              ? 'border-accent bg-accent-subtle text-accent-ink'
-                              : 'border-border bg-canvas text-ink'
-                          }`}
-                        >
-                          {sign === '-' ? '−' : sign}
-                        </button>
-                      ))}
-                    </div>
-
-                    {current.sign !== '0' ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {row.componentOptions.map(opt => (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            data-opt={opt.id}
-                            aria-pressed={current.component === opt.id}
-                            onClick={() => setCell(axis.id, row.forceId, { component: opt.id })}
-                            className={`min-h-[38px] cursor-pointer rounded border px-2.5 text-xs ${
-                              current.component === opt.id
-                                ? 'border-accent bg-accent-subtle font-medium text-accent-ink'
-                                : 'border-border bg-canvas text-ink'
-                            }`}
-                          >
-                            <Markdown inline>{`$${opt.latex}$`}</Markdown>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-ink-muted">Vuông góc trục (hình chiếu = 0)</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {evaluation?.correct ? (
-            <div className="rounded-[var(--radius-sm)] border border-success/35 bg-success-subtle px-3 py-2 text-xs text-success">
-              Phương trình thu được: <Markdown inline>{`$${axis.resultingEquationLatex}$`}</Markdown>
-            </div>
-          ) : null}
-        </div>
-      ))}
-
-      <button type="submit" className="hus-btn hus-btn-primary">
-        Kiểm tra phép chiếu trục
-      </button>
-
-      {evaluation ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`space-y-1.5 rounded-[var(--radius-md)] border px-4 py-3 text-sm ${
-            evaluation.correct
-              ? 'border-success/35 bg-success-subtle text-success'
-              : 'border-warning/35 bg-warning-subtle text-ink'
-          }`}
-        >
-          <div className="flex items-start gap-2 font-medium">
-            {evaluation.correct ? (
-              <CheckCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-success" />
-            ) : (
-              <AlertCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-warning" />
-            )}
-            <span>
-              {evaluation.correct
-                ? 'Chiếu trục chính xác! Hệ phương trình đại số đã sẵn sàng để biến đổi.'
-                : 'Một số thành phần chiếu chưa đúng:'}
-            </span>
-          </div>
-          {!evaluation.correct ? (
-            <ul className="list-disc space-y-1 pl-6 text-xs text-ink-secondary">
-              {evaluation.errors.map((err, i) => (
-                <li key={i}>
-                  <strong className="text-ink">{err.axisLabel}:</strong>{' '}
-                  <Markdown inline>{err.hint}</Markdown>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </form>
-  );
-}
-
-function EquationTransformStepView({
-  step,
-  onSolved,
-}: {
-  readonly step: EquationTransformStep;
-  readonly onSolved: () => void;
-}) {
-  const [stageIndex, setStageIndex] = useState(0);
-  const [history, setHistory] = useState<
-    readonly { readonly label: string; readonly latex: string; readonly canceledLatex?: string }[]
-  >([]);
-  const [lastFeedback, setLastFeedback] = useState<EquationTransformMoveEvaluation | null>(null);
-  const [finished, setFinished] = useState(false);
-
-  const currentStage = step.stages[stageIndex];
-
-  const handleChooseOperation = (operationId: string) => {
-    if (!currentStage || finished) return;
-    const res = evaluateEquationTransformMove(currentStage, operationId);
-    setLastFeedback(res);
-    if (res.advance) {
-      const op = currentStage.operations.find(o => o.id === operationId);
-      setHistory(prev => [
-        ...prev,
-        {
-          label: op?.label ?? '',
-          latex: res.resultLatex,
-          ...(res.canceledLatex ? { canceledLatex: res.canceledLatex } : {}),
-        },
-      ]);
-      if (stageIndex + 1 >= step.stages.length) {
-        setFinished(true);
-        onSolved();
-      } else {
-        setStageIndex(idx => idx + 1);
-      }
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Initial equations & target */}
-      <div className="space-y-2 overflow-x-auto rounded-[var(--radius-lg)] border border-border bg-canvas/80 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2 text-xs text-ink-muted">
-          <span className="font-semibold text-ink">Hệ phương trình xuất phát</span>
-          <span>
-            Mục tiêu: <Markdown inline>{`$${step.goalLatex}$`}</Markdown>
-          </span>
-        </div>
-        <div className="space-y-1.5">
-          {step.initialEquations.map(eq => (
-            <div key={eq.label} className="flex flex-wrap items-baseline gap-2 text-sm">
-              <span className="font-mono text-xs font-semibold text-ink-muted">{eq.label}</span>
-              <Markdown inline>{`$${eq.latex}$`}</Markdown>
-            </div>
-          ))}
-        </div>
-
-        {/* Accepted transformation lines */}
-        {history.length > 0 ? (
-          <div className="mt-3 space-y-2 border-t border-border pt-3">
-            {history.map((line, i) => (
-              <div key={i} className="space-y-1 rounded-[var(--radius-sm)] border border-success/30 bg-success-subtle/60 px-3 py-2 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <span className="font-medium text-success">Bước biến đổi {i + 1}: {line.label}</span>
-                  {line.canceledLatex ? (
-                    <span className="rounded bg-canvas px-2 py-0.5 font-mono text-[11px] text-ink-muted line-through">
-                      <Markdown inline>{`$${line.canceledLatex}$`}</Markdown>
-                    </span>
-                  ) : null}
-                </div>
-                <div className="text-ink">
-                  <Markdown inline>{`$$${line.latex}$$`}</Markdown>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      {/* Current stage operation palette */}
-      {!finished && currentStage ? (
-        <div className="space-y-2.5">
-          <p className="text-sm font-medium text-ink">
-            Thao tác {stageIndex + 1}/{step.stages.length}: <Markdown inline>{currentStage.prompt}</Markdown>
-          </p>
-          <div className="grid gap-2">
-            {currentStage.operations.map(op => (
-              <button
-                key={op.id}
-                type="button"
-                onClick={() => handleChooseOperation(op.id)}
-                className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-2.5 text-left text-sm text-ink transition-colors hover:border-accent hover:bg-accent-subtle/60"
-              >
-                <span className="font-medium">
-                  <Markdown inline>{op.label}</Markdown>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Pedagogical feedback on last move */}
-      {lastFeedback ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className={`space-y-2 rounded-[var(--radius-md)] border px-4 py-3 text-sm ${
-            lastFeedback.advance
-              ? 'border-success/35 bg-success-subtle text-success'
-              : 'border-warning/35 bg-warning-subtle text-ink'
-          }`}
-        >
-          <div className="flex items-start gap-2 font-medium">
-            {lastFeedback.advance ? (
-              <CheckCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-success" />
-            ) : (
-              <AlertCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-warning" />
-            )}
-            <span>
-              <Markdown inline>{lastFeedback.feedback}</Markdown>
-            </span>
-          </div>
-          {!lastFeedback.advance && lastFeedback.resultLatex ? (
-            <div className="rounded-[var(--radius-sm)] border border-border bg-canvas/80 px-3 py-2 text-xs text-ink-secondary">
-              Kết quả phép thử này: <Markdown inline>{`$${lastFeedback.resultLatex}$`}</Markdown>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function NumericUnitStepView({
-  step,
-  onSolved,
-}: {
-  readonly step: NumericUnitStep;
-  readonly onSolved: () => void;
-}) {
-  const [limitChoice, setLimitChoice] = useState<string>('');
-  const [limitChecked, setLimitChecked] = useState<boolean>(!step.limitingCheck);
-  const [values, setValues] = useState<Readonly<Record<string, string>>>({});
-  const [evaluation, setEvaluation] = useState<NumericUnitEvaluation | null>(null);
-
-  const selectedLimitObj = step.limitingCheck?.choices.find(c => c.id === limitChoice);
-  const limitCorrect = step.limitingCheck ? limitChoice === step.limitingCheck.answerId : true;
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    const res = evaluateNumericUnitStep(step, values);
-    setEvaluation(res);
-    if (res.correct && limitCorrect) {
-      onSolved();
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Optional MIT 8.01 Limiting-Case Check */}
-      {step.limitingCheck ? (
-        <div className="space-y-2.5 rounded-[var(--radius-lg)] border border-[var(--hus-starlight)]/40 bg-surface-subtle/60 p-4">
-          <h4 className="text-sm font-semibold text-ink">Kiểm chứng công thức (Trường hợp biên)</h4>
-          <p className="text-xs leading-relaxed text-ink-secondary">
-            <Markdown inline>{step.limitingCheck.prompt}</Markdown>
-          </p>
-          <div className="space-y-1.5">
-            {step.limitingCheck.choices.map(ch => (
-              <label
-                key={ch.id}
-                className={`flex min-h-[42px] cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] border px-3 py-2 text-xs ${
-                  limitChoice === ch.id
-                    ? 'border-accent bg-surface font-medium text-accent-ink'
-                    : 'border-border bg-surface/70 text-ink'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name={`${step.id}-limit`}
-                  checked={limitChoice === ch.id}
-                  onChange={() => {
-                    setLimitChoice(ch.id);
-                    setLimitChecked(ch.id === step.limitingCheck?.answerId);
-                  }}
-                  className="h-4 w-4 accent-[var(--hus-accent)]"
-                />
-                <span>
-                  <Markdown inline>{ch.label}</Markdown>
-                </span>
-              </label>
-            ))}
-          </div>
-          {selectedLimitObj ? (
-            <p
-              className={`text-xs ${
-                limitCorrect ? 'text-success' : 'text-danger'
-              }`}
-            >
-              <Markdown inline>{selectedLimitObj.rationale}</Markdown>
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* Numeric & unit fields */}
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          {step.fields.map(field => (
-            <div key={field.id} className="space-y-1.5">
-              <label htmlFor={`${step.id}-${field.id}`} className="block text-xs font-medium text-ink">
-                {field.label} (<Markdown inline>{`$${field.symbolLatex}$`}</Markdown>)
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id={`${step.id}-${field.id}`}
-                  type="text"
-                  inputMode="decimal"
-                  value={values[field.id] ?? ''}
-                  onChange={e => {
-                    setEvaluation(null);
-                    setValues(prev => ({ ...prev, [field.id]: e.target.value }));
-                  }}
-                  placeholder="vd: 0,47"
-                  className="min-h-[44px] w-full rounded-[var(--radius-md)] border border-border bg-canvas px-3 py-2 font-mono text-sm tabular-nums text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
-                />
-                <span className="shrink-0 font-mono text-xs text-ink-muted">{field.unit}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="submit"
-          disabled={!limitChecked}
-          className="hus-btn hus-btn-primary"
-        >
-          Kiểm tra kết quả số
-        </button>
-
-        {!limitChecked ? (
-          <p className="text-xs text-ink-muted">Hãy hoàn thành câu kiểm chứng trường hợp biên ở trên trước khi nộp kết quả số.</p>
-        ) : null}
-
-        {evaluation ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className={`space-y-1.5 rounded-[var(--radius-md)] border px-4 py-3 text-sm ${
-              evaluation.correct
-                ? 'border-success/35 bg-success-subtle text-success'
-                : 'border-warning/35 bg-warning-subtle text-ink'
-            }`}
-          >
-            <div className="flex items-start gap-2 font-medium">
-              {evaluation.correct ? (
-                <CheckCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-success" />
-              ) : (
-                <AlertCircleIcon width={17} height={17} className="mt-0.5 shrink-0 text-warning" />
-              )}
-              <span>
-                {evaluation.correct ? 'Chính xác! Bạn đã hoàn thành bước kiểm chứng số liệu.' : 'Kiểm tra lại kết quả:'}
-              </span>
-            </div>
-            <ul className="list-disc space-y-1 pl-6 text-xs text-ink-secondary">
-              {evaluation.fields.map(f => (
-                <li key={f.fieldId}>{f.message}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </form>
     </div>
   );
 }

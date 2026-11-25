@@ -4,7 +4,11 @@ import { learningContent } from '../infrastructure/content/learning';
 import { courseLessons } from '../core/learning/content';
 import { courseWrittenPractice } from '../core/learning/written-content';
 import { writtenPractice } from '../infrastructure/content/written-practice';
-import { courseProgress } from '../core/learning/progress';
+import {
+  completedCourseLessonIds,
+  courseEffectiveProgress,
+  isPracticeOnlyCourse,
+} from '../core/learning/progress';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { useQuestProgress } from '../app/useQuestProgress';
 import { getQuestsForCourse } from '../infrastructure/quests/registry';
@@ -72,16 +76,17 @@ export default function CoursePage() {
   const subjectModule = getSubjectModule(course.subjectId);
   const code = course.academicCode ?? course.id;
   const isAvailable = course.status === 'available';
+  const practiceOnly = isPracticeOnlyCourse(course);
   const lessons = courseLessons(learningContent, course);
   const writingExercises = courseWrittenPractice(learningContent, course, writtenPractice);
-  const lessonIds = lessons.map(l => l.id);
-  const completedCount = lessonIds.filter(id => progress.completedLessonIds.includes(id)).length;
-  const percentage = courseProgress(lessonIds, progress);
+  const effectiveCompletedIds = completedCourseLessonIds(course, lessons, progress);
+  const completedCount = effectiveCompletedIds.length;
+  const percentage = courseEffectiveProgress(course, lessons, progress);
 
   const recentInCourse = progress.recentTopics.find(t => t.courseId === course.id);
   const nextLesson =
     (recentInCourse ? lessons.find(l => l.id === recentInCourse.lessonId) : undefined) ??
-    lessons.find(l => !progress.completedLessonIds.includes(l.id)) ??
+    lessons.find(l => !effectiveCompletedIds.includes(l.id)) ??
     lessons[0];
 
   const courseQuests = getQuestsForCourse(course.id);
@@ -255,60 +260,90 @@ export default function CoursePage() {
       </section>
     ) : null;
 
-  const metadataRail = (
+  const metadataFooter = (
     <aside
       aria-label="Thông tin học phần"
-      className="space-y-5 lg:sticky lg:top-24 lg:self-start"
+      className="flex min-w-0 flex-col gap-3 rounded-[var(--radius-xl)] border border-border bg-surface-subtle/45 p-4 sm:flex-row sm:items-center sm:justify-between"
     >
-      <div className="hus-card-surface rounded-[var(--radius-xl)] border border-border bg-surface p-5">
-        <h2 className="font-display text-lg font-medium text-ink">Thông tin lưu trữ</h2>
-        <dl className="mt-4 space-y-3 text-xs">
-          <div className="flex justify-between gap-3 border-b border-border pb-2.5">
-            <dt className="text-ink-muted">Định danh ổn định</dt>
-            <dd className="font-mono text-ink">{course.id}</dd>
+      <details className="min-w-0 flex-1 text-xs">
+        <summary className="cursor-pointer break-words font-medium text-ink-secondary select-none hover:text-ink">
+          Thông tin lưu trữ &amp; bản quyền ({course.id} · {RIGHTS_LABEL[course.provenance.rights]})
+        </summary>
+        <dl className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1.5 border-t border-border pt-2.5 text-ink-muted">
+          <div>
+            <dt className="inline">Định danh: </dt>
+            <dd className="inline font-mono text-ink">{course.id}</dd>
           </div>
-          <div className="flex justify-between gap-3 border-b border-border pb-2.5">
-            <dt className="text-ink-muted">Ngôn ngữ</dt>
-            <dd className="text-ink">
+          <div>
+            <dt className="inline">Ngôn ngữ: </dt>
+            <dd className="inline text-ink">
               {course.language === 'vi' ? 'Tiếng Việt' : course.language}
             </dd>
           </div>
-          <div className="flex justify-between gap-3 border-b border-border pb-2.5">
-            <dt className="text-ink-muted">Số chương</dt>
-            <dd className="font-mono tabular-nums text-ink">{course.chapterIds.length}</dd>
+          <div>
+            <dt className="inline">Số chương: </dt>
+            <dd className="inline font-mono tabular-nums text-ink">{course.chapterIds.length}</dd>
           </div>
           {lessons.length > 0 ? (
-            <div className="flex justify-between gap-3 border-b border-border pb-2.5">
-              <dt className="text-ink-muted">Số bài học</dt>
-              <dd className="font-mono tabular-nums text-ink">{lessons.length}</dd>
+            <div>
+              <dt className="inline">Số bài: </dt>
+              <dd className="inline font-mono tabular-nums text-ink">{lessons.length}</dd>
             </div>
           ) : null}
-          {courseQuests.length > 0 ? (
-            <div className="flex justify-between gap-3 border-b border-border pb-2.5">
-              <dt className="text-ink-muted">Nhiệm vụ 4 mốc</dt>
-              <dd className="font-mono tabular-nums text-ink">{courseQuests.length}</dd>
-            </div>
-          ) : null}
-          <div className="flex justify-between gap-3">
-            <dt className="text-ink-muted">Quyền phân phối</dt>
-            <dd className="text-right text-ink">{RIGHTS_LABEL[course.provenance.rights]}</dd>
-          </div>
         </dl>
+      </details>
+
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {isAvailable && lessons.length > 0 ? (
+          <NotebookLmExportControl courseId={course.id} courseCode={code} variant="compact" />
+        ) : null}
+        <Link to="/courses" className="hus-btn hus-btn-ghost min-h-[34px] px-3 text-xs">
+          <ArrowLeftIcon width={14} height={14} />
+          <span>Danh sách học phần</span>
+        </Link>
       </div>
-
-      {isAvailable && lessons.length > 0 ? (
-        <NotebookLmExportControl courseId={course.id} courseCode={code} />
-      ) : null}
-
-      <Link to="/" className="hus-btn hus-btn-ghost w-full justify-start px-3 text-xs">
-        <ArrowLeftIcon width={14} height={14} />
-        Về danh sách học phần
-      </Link>
     </aside>
   );
 
+  const primaryExerciseTool = availableTools.find(tool => tool.kind === 'exercise');
+  const firstChapterId = course.chapterIds[0];
+
+  const practiceOnlyBanner =
+    practiceOnly && !isToolFocused ? (
+      <div
+        data-practice-only-course-banner="true"
+        className="flex min-w-0 flex-wrap items-center justify-between gap-2.5 rounded-[var(--radius-xl)] border border-accent/30 bg-accent-subtle/30 px-4 py-3"
+      >
+        <p className="min-w-0 text-xs leading-relaxed text-ink-secondary">
+          <strong className="font-semibold text-ink">Thực chiến {code}:</strong> Giải trực tiếp trắc nghiệm, điền đáp số &amp; tự luận giấy A4 (công thức gốc được cất gọn thành sổ tra cứu).
+        </p>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {primaryExerciseTool ? (
+            <Link
+              to={`/courses/${course.id}?tool=${encodeURIComponent(primaryExerciseTool.id)}`}
+              className="hus-btn hus-btn-secondary min-h-[34px] px-3 py-1 text-xs !no-underline"
+            >
+              <span>Kho đề &amp; Phòng luyện</span>
+              <ArrowRightIcon width={13} height={13} />
+            </Link>
+          ) : null}
+          {firstChapterId ? (
+            <Link
+              to={`/courses/${course.id}/chapters/${firstChapterId}/exam`}
+              className="hus-btn hus-btn-primary min-h-[34px] px-3 py-1 text-xs !no-underline"
+            >
+              <span>Kiểm tra Chương 1 (3–10 câu)</span>
+              <ArrowRightIcon width={13} height={13} />
+            </Link>
+          ) : null}
+        </div>
+      </div>
+    ) : null;
+
   const atlasAndMetadata = (
-    <>
+    <div className="min-w-0 space-y-6">
+      {practiceOnlyBanner}
+
       {/* Universal Celestial Course Atlas & Dependency Graph */}
       <CourseAtlas
         course={course}
@@ -321,26 +356,17 @@ export default function CoursePage() {
 
       {questsSection}
 
-      {/* Full-width interactive subject tools (never squeezed beside the 20rem metadata rail) */}
+      {/* Full-width interactive subject tools */}
       {!isDualTrack && !isToolFocused ? toolsSection : null}
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0 space-y-10">
-          {writingSection ?? (
-            <div className="rounded-[var(--radius-xl)] border border-border bg-surface/85 p-5 text-sm leading-relaxed text-ink-secondary">
-              Chạm vào từng bài trong <strong className="font-medium text-ink">Sơ đồ liên kết</strong> hoặc các{' '}
-              <strong className="font-medium text-ink">Nhiệm vụ 4 mốc</strong> ở trên để học tương tác theo từng chặng nhỏ.
-            </div>
-          )}
-        </div>
+      {writingSection}
 
-        {metadataRail}
-      </div>
-    </>
+      {metadataFooter}
+    </div>
   );
 
   return (
-    <div className="space-y-8">
+    <div className="min-w-0 space-y-8 overflow-x-clip">
       {/* Atmospheric Observatory course masthead */}
       <ObservatoryHeader
         breadcrumbs={
@@ -368,6 +394,9 @@ export default function CoursePage() {
             <Badge tone={isAvailable ? 'success' : 'warning'}>
               {isAvailable ? 'Có nội dung học' : 'Chỉ có thông tin học phần'}
             </Badge>
+            {practiceOnly ? (
+              <Badge tone="warning">Chỉ luyện bài tập · Bỏ lý thuyết</Badge>
+            ) : null}
           </>
         }
         title={course.title}
@@ -377,20 +406,37 @@ export default function CoursePage() {
             {lessons.length > 0 ? (
               <span className="text-ink-muted">
                 {' '}
-                · {course.chapterIds.length} chương · {lessons.length} bài học
+                · {course.chapterIds.length} chương · {lessons.length}{' '}
+                {practiceOnly ? 'trạm bài tập' : 'bài học'}
               </span>
             ) : null}
           </p>
         }
         aside={
           isAvailable && nextLesson ? (
-            <Link
-              to={`/courses/${course.id}/lessons/${nextLesson.id}`}
-              className="hus-btn hus-btn-primary min-h-[44px] px-5"
-            >
-              <span>{recentInCourse || completedCount > 0 ? 'Tiếp tục học' : 'Bắt đầu học'}</span>
-              <ArrowRightIcon width={15} height={15} />
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                to={`/exams?course=${encodeURIComponent(course.id)}`}
+                className="hus-btn hus-btn-secondary min-h-[44px] px-4 !no-underline"
+              >
+                <span>Luyện đề tự luận</span>
+              </Link>
+              <Link
+                to={`/courses/${course.id}/lessons/${nextLesson.id}`}
+                className="hus-btn hus-btn-primary min-h-[44px] px-5"
+              >
+                <span>
+                  {practiceOnly
+                    ? recentInCourse || completedCount > 0
+                      ? 'Tiếp tục giải bài tập'
+                      : 'Vào giải bài tập ngay'
+                    : recentInCourse || completedCount > 0
+                      ? 'Tiếp tục học'
+                      : 'Bắt đầu học'}
+                </span>
+                <ArrowRightIcon width={15} height={15} />
+              </Link>
+            </div>
           ) : undefined
         }
         footer={
@@ -400,7 +446,7 @@ export default function CoursePage() {
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="font-medium text-ink">Tiến độ học phần</span>
                   <span className="font-mono tabular-nums text-ink-muted">
-                    {completedCount}/{lessons.length} bài · {percentage}%
+                    {completedCount}/{lessons.length} {practiceOnly ? 'trạm' : 'bài'} · {percentage}%
                   </span>
                 </div>
                 <progress
@@ -412,7 +458,9 @@ export default function CoursePage() {
               </div>
             ) : (
               <p className="border-t border-border pt-4 text-sm text-ink-muted">
-                Bắt đầu từ bài đầu tiên hoặc chọn trực tiếp chủ đề trong đề cương bên dưới.
+                {practiceOnly
+                  ? 'Học phần này bỏ qua học lý thuyết từng chặng — chỉ cần giải được các dạng bài tập, tự luận giấy A4 và đề kiểm tra cuối chương là hoàn thành.'
+                  : 'Bắt đầu từ bài đầu tiên hoặc chọn trực tiếp chủ đề trong đề cương bên dưới.'}
               </p>
             )
           ) : !isAvailable ? (

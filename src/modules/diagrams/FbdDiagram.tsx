@@ -8,6 +8,10 @@ import {
   type FbdDrawnArrow,
   type FbdStepGradeResult,
 } from '../../core/learning/fbd';
+import {
+  isPlainObject,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
 const SVG_SIZE = 280;
@@ -93,17 +97,74 @@ function bodyMagnets(body: FbdBodySpec): readonly number[] {
   return base;
 }
 
-export default function FbdDiagram({ spec, completed, onEvaluated }: DiagramRendererProps) {
+function validateFbdDraft(
+  raw: unknown,
+  bodies: readonly FbdBodySpec[],
+): Readonly<Record<string, readonly FbdDrawnArrow[]>> | null {
+  if (!isPlainObject(raw)) return null;
+  const out: Record<string, readonly FbdDrawnArrow[]> = {};
+  for (const body of bodies) {
+    const arr = raw[body.id];
+    if (!Array.isArray(arr) || arr.length > 24) {
+      out[body.id] = [];
+      continue;
+    }
+    const validArrows: FbdDrawnArrow[] = [];
+    for (const item of arr) {
+      if (
+        isPlainObject(item) &&
+        typeof item.id === 'string' &&
+        item.id.length <= 40 &&
+        typeof item.type === 'string' &&
+        item.type.length <= 40 &&
+        typeof item.angle === 'number' &&
+        Number.isFinite(item.angle)
+      ) {
+        validArrows.push({
+          id: item.id,
+          type: item.type,
+          angle: normalizeAngle(item.angle),
+        });
+      }
+    }
+    out[body.id] = validArrows;
+  }
+  return out;
+}
+
+export default function FbdDiagram({
+  spec,
+  completed,
+  hideSolutionOverlay = false,
+  draftKey,
+  onEvaluated,
+}: DiagramRendererProps) {
   const fbdSpec = spec as FbdStepSpec;
   const [activeBodyId, setActiveBodyId] = useState(fbdSpec.bodies[0]?.id ?? '');
-  const [drawnByBody, setDrawnByBody] = useState<Readonly<Record<string, readonly FbdDrawnArrow[]>>>(() =>
-    Object.fromEntries(fbdSpec.bodies.map(b => [b.id, []])),
+  const [drawnByBody, setDrawnByBody, resetDrawnByBody] = useInteractiveStepDraft<
+    Readonly<Record<string, readonly FbdDrawnArrow[]>>
+  >(
+    draftKey,
+    () => Object.fromEntries(fbdSpec.bodies.map(b => [b.id, []])),
+    raw => validateFbdDraft(raw, fbdSpec.bodies),
   );
   const [selectedArrowId, setSelectedArrowId] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [grade, setGrade] = useState<FbdStepGradeResult | null>(null);
   const [showOverlay, setShowOverlay] = useState(false);
   const nextIdRef = useRef(1);
+  let maxPersistedSuffix = 0;
+  for (const arrows of Object.values(drawnByBody)) {
+    for (const arrow of arrows) {
+      const match = /^arr-(\d+)$/.exec(arrow.id);
+      if (match) {
+        maxPersistedSuffix = Math.max(maxPersistedSuffix, Number(match[1]));
+      }
+    }
+  }
+  if (nextIdRef.current <= maxPersistedSuffix) {
+    nextIdRef.current = maxPersistedSuffix + 1;
+  }
   const draggingRef = useRef(false);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -168,7 +229,8 @@ export default function FbdDiagram({ spec, completed, onEvaluated }: DiagramRend
   };
 
   const handleReset = () => {
-    setDrawnByBody(Object.fromEntries(fbdSpec.bodies.map(b => [b.id, []])));
+    resetDrawnByBody();
+    nextIdRef.current = 1;
     setSelectedArrowId(null);
     setGrade(null);
     setShowOverlay(false);
@@ -314,7 +376,7 @@ export default function FbdDiagram({ spec, completed, onEvaluated }: DiagramRend
             ) : null}
 
             {/* Compare overlay (expected arrows in dashed green) */}
-            {showOverlay
+            {showOverlay && !hideSolutionOverlay
               ? activeBody.expected.map((exp, idx) => {
                   const origin = resolveArrowOrigin(activeBody, exp.type, exp.applicationOffset);
                   const tip = polarToSvg(exp.angle, ARROW_LEN + 6, origin);
@@ -599,7 +661,7 @@ export default function FbdDiagram({ spec, completed, onEvaluated }: DiagramRend
           <RotateCcwIcon width={14} height={14} />
           Vẽ lại
         </button>
-        {attempts >= 2 || completed ? (
+        {!hideSolutionOverlay && (attempts >= 2 || completed) ? (
           <button
             type="button"
             onClick={() => setShowOverlay(open => !open)}

@@ -6,12 +6,22 @@ import type {
   ChapterExamPaper,
   ChapterExamPoolSummary,
   ChapterExamWrittenResult,
+  ExamAnswerMode,
   ExerciseFormKind,
 } from '../../domain/chapter-exam';
+import type {
+  CourseConventionCanon,
+  TutorCoachingFeedback,
+} from '../../domain/curriculum-tutor';
 import type { EntityId } from '../../domain/learning';
 import type { WrittenReasoningStep } from '../../domain/semi-essay';
 import type { ExerciseDefinition } from '../../domain/workspace';
 import { evaluateAnswer } from './exercises';
+import {
+  adaptClassicExerciseToSemiEssay,
+  doesClassicPromptRequireStatements,
+  TUTOR_M1_PASS_SCORE,
+} from './webmcp-essay-adapters';
 
 /** Priority order when guaranteeing at least 1 question per available form: written A4 first. */
 const SELECTION_FORM_PRIORITY: readonly ExerciseFormKind[] = [
@@ -120,6 +130,9 @@ export interface BuildChapterExamPaperOptions {
   readonly preset: ChapterExamLengthPreset;
   readonly customCount?: number | undefined;
   readonly seed?: number | undefined;
+  readonly answerMode?: ExamAnswerMode | undefined;
+  readonly canon?: CourseConventionCanon | undefined;
+  readonly pinnedExerciseIds?: readonly EntityId[] | undefined;
 }
 
 export function buildChapterExamPaper({
@@ -128,6 +141,9 @@ export function buildChapterExamPaper({
   preset,
   customCount,
   seed = 1,
+  answerMode = 'mixed',
+  canon,
+  pinnedExerciseIds,
 }: BuildChapterExamPaperOptions): ChapterExamPaper {
   const summary = summarizeChapterExamPool(exercises, lessonOrder);
   if (summary.totalExercises === 0) {
@@ -140,70 +156,79 @@ export function buildChapterExamPaper({
     };
   }
 
-  const rawTarget =
-    customCount !== undefined
-      ? Math.round(customCount)
-      : summary.recommendedCountByPreset[preset];
-  const targetCount = Math.max(
-    summary.minSelectableCount,
-    Math.min(summary.maxSelectableCount, rawTarget),
-  );
-
-  const rng = mulberry32(seed);
-  const shuffledPool = deterministicShuffle(exercises, rng);
-
-  const selected: ExerciseDefinition[] = [];
-  const selectedIds = new Set<string>();
-  const lessonPickCounts = new Map<string, number>();
-
-  const recordPick = (ex: ExerciseDefinition) => {
-    selected.push(ex);
-    selectedIds.add(ex.id);
-    lessonPickCounts.set(ex.lessonId, (lessonPickCounts.get(ex.lessonId) ?? 0) + 1);
-  };
-
-  const pickBestCandidate = (candidates: readonly ExerciseDefinition[]): ExerciseDefinition | undefined => {
-    let best: ExerciseDefinition | undefined;
-    let bestLessonCount = Number.POSITIVE_INFINITY;
-    for (const candidate of candidates) {
-      if (selectedIds.has(candidate.id)) continue;
-      const count = lessonPickCounts.get(candidate.lessonId) ?? 0;
-      if (count < bestLessonCount) {
-        best = candidate;
-        bestLessonCount = count;
-        if (count === 0) break;
-      }
-    }
-    return best;
-  };
-
-  // Pass 1: Guarantee at least 1 exercise from every distinct form (written A4 semi-essay first)
-  for (const kind of summary.distinctForms) {
-    if (selected.length >= targetCount) break;
-    const candidates = shuffledPool.filter(ex => ex.kind === kind);
-    const chosen = pickBestCandidate(candidates);
-    if (chosen) recordPick(chosen);
+  let selected: ExerciseDefinition[] = [];
+  if (pinnedExerciseIds && pinnedExerciseIds.length > 0) {
+    const pinnedSet = new Set(pinnedExerciseIds);
+    selected = exercises.filter(ex => pinnedSet.has(ex.id));
   }
 
-  // Pass 2: Spread across chapter lessons in order, rotating through forms for balance
-  let formCursor = 0;
-  while (selected.length < targetCount) {
-    let addedInRound = false;
-    for (let i = 0; i < summary.distinctForms.length && selected.length < targetCount; i += 1) {
-      const kind =
-        summary.distinctForms[(formCursor + i) % summary.distinctForms.length]!;
-      const chosen = pickBestCandidate(shuffledPool.filter(ex => ex.kind === kind));
-      if (chosen) {
-        recordPick(chosen);
-        formCursor = (formCursor + i + 1) % summary.distinctForms.length;
-        addedInRound = true;
-        break;
+  if (selected.length === 0) {
+    const rawTarget =
+      customCount !== undefined
+        ? Math.round(customCount)
+        : summary.recommendedCountByPreset[preset];
+    const targetCount = Math.max(
+      summary.minSelectableCount,
+      Math.min(summary.maxSelectableCount, rawTarget),
+    );
+
+    const rng = mulberry32(seed);
+    const shuffledPool = deterministicShuffle(exercises, rng);
+
+    const selectedIds = new Set<string>();
+    const lessonPickCounts = new Map<string, number>();
+
+    const recordPick = (ex: ExerciseDefinition) => {
+      selected.push(ex);
+      selectedIds.add(ex.id);
+      lessonPickCounts.set(ex.lessonId, (lessonPickCounts.get(ex.lessonId) ?? 0) + 1);
+    };
+
+    const pickBestCandidate = (
+      candidates: readonly ExerciseDefinition[],
+    ): ExerciseDefinition | undefined => {
+      let best: ExerciseDefinition | undefined;
+      let bestLessonCount = Number.POSITIVE_INFINITY;
+      for (const candidate of candidates) {
+        if (selectedIds.has(candidate.id)) continue;
+        const count = lessonPickCounts.get(candidate.lessonId) ?? 0;
+        if (count < bestLessonCount) {
+          best = candidate;
+          bestLessonCount = count;
+          if (count === 0) break;
+        }
       }
+      return best;
+    };
+
+    // Pass 1: Guarantee at least 1 exercise from every distinct form (written A4 semi-essay first)
+    for (const kind of summary.distinctForms) {
+      if (selected.length >= targetCount) break;
+      const candidates = shuffledPool.filter(ex => ex.kind === kind);
+      const chosen = pickBestCandidate(candidates);
+      if (chosen) recordPick(chosen);
     }
-    if (!addedInRound) {
-      const fallback = pickBestCandidate(shuffledPool);
-      if (!fallback) break;
-      recordPick(fallback);
+
+    // Pass 2: Spread across chapter lessons in order, rotating through forms for balance
+    let formCursor = 0;
+    while (selected.length < targetCount) {
+      let addedInRound = false;
+      for (let i = 0; i < summary.distinctForms.length && selected.length < targetCount; i += 1) {
+        const kind =
+          summary.distinctForms[(formCursor + i) % summary.distinctForms.length]!;
+        const chosen = pickBestCandidate(shuffledPool.filter(ex => ex.kind === kind));
+        if (chosen) {
+          recordPick(chosen);
+          formCursor = (formCursor + i + 1) % summary.distinctForms.length;
+          addedInRound = true;
+          break;
+        }
+      }
+      if (!addedInRound) {
+        const fallback = pickBestCandidate(shuffledPool);
+        if (!fallback) break;
+        recordPick(fallback);
+      }
     }
   }
 
@@ -220,10 +245,27 @@ export function buildChapterExamPaper({
     preset,
     targetCount: ordered.length,
     seed,
-    items: ordered.map((exercise, idx) => ({
-      questionNumber: idx + 1,
-      exercise,
-    })),
+    items: ordered.map((exercise, idx) => {
+      if (answerMode === 'written-all' && exercise.kind !== 'semi-essay') {
+        const embedded = doesClassicPromptRequireStatements(exercise);
+        return {
+          questionNumber: idx + 1,
+          originalKind: exercise.kind,
+          ...(exercise.kind !== 'short-answer'
+            ? {
+                referenceChoices: exercise.choices,
+                choicesEmbeddedInPrompt: embedded,
+              }
+            : {}),
+          exercise: adaptClassicExerciseToSemiEssay(exercise, { canon }),
+        };
+      }
+      return {
+        questionNumber: idx + 1,
+        originalKind: exercise.kind,
+        exercise,
+      };
+    }),
     summary,
   };
 }
@@ -259,6 +301,7 @@ export function evaluateChapterExam(
   paper: ChapterExamPaper,
   draft: ChapterExamDraft,
   lessonOrder: readonly EntityId[] = [],
+  coachingByStepId: Readonly<Record<string, TutorCoachingFeedback>> = {},
 ): ChapterExamEvaluation {
   const objectiveByExerciseId: Record<string, ChapterExamObjectiveResult> = {};
   const writtenByExerciseId: Record<string, ChapterExamWrittenResult> = {};
@@ -270,6 +313,8 @@ export function evaluateChapterExam(
   let writtenTotal = 0;
   let writtenDrafted = 0;
   let writtenSelfReviewed = 0;
+  let gradedWrittenCount = 0;
+  let accumulatedQuestionScores = 0;
 
   for (const { exercise } of paper.items) {
     if (exercise.kind === 'semi-essay') {
@@ -278,28 +323,58 @@ export function evaluateChapterExam(
       const stepStatuses = steps.map(step => {
         const text = (draft.writtenResponses[step.id] ?? '').trim();
         const checked = draft.checkedRubricIds[step.id] ?? [];
+        const fb = coachingByStepId[step.id];
         const drafted = text.length > 0;
+        const rubricAllChecked =
+          step.rubric.length === 0 ||
+          step.rubric.every(criterion => checked.includes(criterion.id));
         const selfReviewed =
           drafted &&
-          (step.rubric.length === 0 ||
-            step.rubric.every(criterion => checked.includes(criterion.id)));
+          (fb?.verdict === 'pass' || (fb?.verdict === undefined && rubricAllChecked));
+        const stepVerdict = fb?.verdict ?? (selfReviewed ? 'pass' : undefined);
+        const stepScoreOn10 =
+          typeof fb?.score === 'number'
+            ? fb.score
+            : selfReviewed && fb !== undefined
+              ? 10
+              : undefined;
         return {
           stepId: step.id,
           drafted,
           selfReviewed,
+          ...(stepVerdict !== undefined ? { verdict: stepVerdict } : {}),
+          ...(stepScoreOn10 !== undefined ? { scoreOn10: stepScoreOn10 } : {}),
         };
       });
       const allDrafted = stepStatuses.every(s => s.drafted);
       const allReviewed = stepStatuses.every(s => s.selfReviewed);
+      const anyNotPass = stepStatuses.some(s => s.verdict === 'not-pass');
+      const allScored =
+        stepStatuses.length > 0 && stepStatuses.every(s => typeof s.scoreOn10 === 'number');
+      const questionVerdict = allReviewed ? 'pass' : anyNotPass ? 'not-pass' : undefined;
+      const questionScoreOn10 = allScored
+        ? Math.round(
+            (stepStatuses.reduce((sum, s) => sum + (s.scoreOn10 ?? 0), 0) / stepStatuses.length) *
+              100,
+          ) / 100
+        : undefined;
+
       if (allDrafted) writtenDrafted += 1;
       if (allReviewed) writtenSelfReviewed += 1;
       else reviewLessonSet.add(exercise.lessonId);
+
+      if (questionVerdict !== undefined || questionScoreOn10 !== undefined) {
+        gradedWrittenCount += 1;
+      }
+      accumulatedQuestionScores += questionScoreOn10 ?? (allReviewed ? 10 : 0);
 
       writtenByExerciseId[exercise.id] = {
         exerciseId: exercise.id,
         lessonId: exercise.lessonId,
         drafted: allDrafted,
         selfReviewed: allReviewed,
+        ...(questionVerdict !== undefined ? { verdict: questionVerdict } : {}),
+        ...(questionScoreOn10 !== undefined ? { scoreOn10: questionScoreOn10 } : {}),
         stepStatuses,
       };
     } else {
@@ -313,8 +388,12 @@ export function evaluateChapterExam(
             : false;
       if (answered) objectiveAnswered += 1;
       const correct = answered && rawAnswer !== undefined ? evaluateAnswer(exercise, rawAnswer) : false;
-      if (correct) objectiveCorrect += 1;
-      else reviewLessonSet.add(exercise.lessonId);
+      if (correct) {
+        objectiveCorrect += 1;
+        accumulatedQuestionScores += 10;
+      } else {
+        reviewLessonSet.add(exercise.lessonId);
+      }
 
       objectiveByExerciseId[exercise.id] = {
         exerciseId: exercise.id,
@@ -333,6 +412,13 @@ export function evaluateChapterExam(
         ]
       : [...reviewLessonSet];
 
+  const hasAnyEvaluationSignal = gradedWrittenCount > 0 || objectiveAnswered > 0;
+  const paperScoreOn10 =
+    paper.items.length > 0 && hasAnyEvaluationSignal
+      ? Math.round((accumulatedQuestionScores / paper.items.length) * 100) / 100
+      : null;
+  const paperPassed = paperScoreOn10 !== null && paperScoreOn10 >= TUTOR_M1_PASS_SCORE;
+
   return {
     objectiveTotal,
     objectiveAnswered,
@@ -341,7 +427,10 @@ export function evaluateChapterExam(
     writtenTotal,
     writtenDrafted,
     writtenSelfReviewed,
+    gradedWrittenCount,
     writtenByExerciseId,
+    paperScoreOn10,
+    paperPassed,
     lessonsToReview: orderedReviewLessons,
   };
 }

@@ -7,12 +7,21 @@ import type {
   ParsonsPlacement,
 } from '../../domain/block-logic';
 import { gradeParsonsSubmission } from '../../core/blocks/parsons';
+import {
+  isPlainObject,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { Badge } from '../../components/ui/Badge';
 import { AlertCircleIcon, CheckCircleIcon, RotateCcwIcon } from '../../components/ui/Icons';
 
 const MAX_INDENT = 4;
 
-export default function ParsonsFlowDiagram({ spec, completed, onEvaluated }: DiagramRendererProps) {
+export default function ParsonsFlowDiagram({
+  spec,
+  completed,
+  draftKey,
+  onEvaluated,
+}: DiagramRendererProps) {
   const parsonsSpec = spec as ParsonsFlowStepSpec;
 
   const syntheticExercise = useMemo<ParsonsExercise>(
@@ -33,13 +42,35 @@ export default function ParsonsFlowDiagram({ spec, completed, onEvaluated }: Dia
     [parsonsSpec.blocks],
   );
 
-  const [placements, setPlacements] = useState<readonly ParsonsPlacement[]>(() =>
-    completed
-      ? parsonsSpec.solutionOrder.map(id => ({
-          blockId: id,
-          indent: blockById.get(id)?.expectedIndent ?? 0,
-        }))
-      : [],
+  const [placements, setPlacements, resetPlacements] = useInteractiveStepDraft<
+    readonly ParsonsPlacement[]
+  >(
+    draftKey,
+    () =>
+      completed
+        ? parsonsSpec.solutionOrder.map(id => ({
+            blockId: id,
+            indent: blockById.get(id)?.expectedIndent ?? 0,
+          }))
+        : [],
+    raw => {
+      if (!Array.isArray(raw) || raw.length > 50) return null;
+      const out: ParsonsPlacement[] = [];
+      for (const item of raw) {
+        if (!isPlainObject(item)) return null;
+        if (typeof item.blockId !== 'string' || !blockById.has(item.blockId)) return null;
+        if (
+          typeof item.indent !== 'number' ||
+          !Number.isInteger(item.indent) ||
+          item.indent < 0 ||
+          item.indent > MAX_INDENT
+        ) {
+          return null;
+        }
+        out.push({ blockId: item.blockId, indent: item.indent });
+      }
+      return out;
+    },
   );
   const [grade, setGrade] = useState<ParsonsGradeResult | null>(null);
 
@@ -95,7 +126,7 @@ export default function ParsonsFlowDiagram({ spec, completed, onEvaluated }: Dia
   };
 
   const handleReset = () => {
-    setPlacements([]);
+    resetPlacements();
     setGrade(null);
   };
 

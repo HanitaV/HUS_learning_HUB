@@ -220,44 +220,24 @@ function resolveMathlibToolbarSnippet(symbol: MathSymbol): {
   readonly snippet: string;
   readonly offset: number;
 } {
-  switch (symbol.id) {
-    case 'frac':
-      return { snippet: '\\{/}', offset: -2 };
-    case 'power':
-      return { snippet: '\\{^()}', offset: -4 };
-    case 'subscript':
-      return { snippet: '\\{_()}', offset: -4 };
-    case 'sqrt':
-      return { snippet: '\\sqrt{}', offset: -1 };
-    case 'nth-root':
-      return { snippet: '\\root{}{}', offset: -3 };
-    case 'sum':
-      return { snippet: '\\sum{i=1..n}{}', offset: -1 };
-    case 'prod':
-      return { snippet: '\\prod{i=1..n}{}', offset: -1 };
-    case 'lim':
-      return { snippet: '\\lim{x->0}{}', offset: -1 };
-    case 'integral':
-      return { snippet: '\\int{a..b}{ dx}', offset: -4 };
-    case 'indef-integral':
-      return { snippet: '\\int{ dx}', offset: -4 };
-    case 'ddx':
-      return { snippet: '\\ddx{}', offset: -1 };
-    default: {
-      const trimmedLatex = symbol.latexInsert.trim();
-      if (/^\\[a-zA-Z]+(?:\{\})?$/.test(trimmedLatex)) {
-        const hasBraces = trimmedLatex.endsWith('{}');
-        return {
-          snippet: hasBraces ? trimmedLatex : `${trimmedLatex} `,
-          offset: hasBraces ? -1 : 0,
-        };
-      }
-      return {
-        snippet: symbol.unicodeInsert ?? symbol.glyph,
-        offset: symbol.unicodeCursorOffset ?? 0,
-      };
-    }
+  if (symbol.mathlibInsert !== undefined) {
+    return {
+      snippet: symbol.mathlibInsert,
+      offset: symbol.mathlibCursorOffset ?? 0,
+    };
   }
+  const trimmedLatex = symbol.latexInsert.trim();
+  if (/^\\[a-zA-Z]+(?:\{\})?$/.test(trimmedLatex)) {
+    const hasBraces = trimmedLatex.endsWith('{}');
+    return {
+      snippet: hasBraces ? trimmedLatex : `${trimmedLatex} `,
+      offset: hasBraces ? -1 : 0,
+    };
+  }
+  return {
+    snippet: symbol.unicodeInsert ?? symbol.glyph,
+    offset: symbol.unicodeCursorOffset ?? 0,
+  };
 }
 
 /**
@@ -354,10 +334,18 @@ export function normalizeMathTextForEvaluation(input: string): string {
     .replace(/≤/g, '<=')
     .replace(/≥/g, '>=')
     .replace(/≠/g, '!=')
+    .replace(/³\+/g, '^3+')
+    .replace(/³⁻/g, '^3-')
+    .replace(/²\+/g, '^2+')
+    .replace(/²⁺/g, '^2+')
+    .replace(/²⁻/g, '^2-')
+    .replace(/⁺/g, '^+')
+    .replace(/⁻/g, '^-')
     .replace(/²/g, '^2')
     .replace(/³/g, '^3')
     .replace(/ⁿ/g, '^n')
     .replace(/⁻¹/g, '^-1')
+    .replace(/₂/g, '_2')
     .replace(/π/g, 'pi')
     .replace(/∞/g, 'inf')
     .replace(/√/g, 'sqrt')

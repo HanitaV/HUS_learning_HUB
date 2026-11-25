@@ -18,6 +18,7 @@ import type { LearningContent } from '../../domain/workspace';
 import { normalizeVietnamese } from '../courses/search';
 import { buildLessonGraph } from './graph';
 import { parseMicroLesson } from './micro-lesson';
+import { convertStudentShorthandToLatex } from './realtime-math-preview';
 
 const VIETNAMESE_STOPWORDS: ReadonlySet<string> = new Set([
   'va',
@@ -434,6 +435,76 @@ function truncateExcerpt(markdown: string, maxLength = 900): string {
   return `${markdown.slice(0, maxLength).trimEnd()}\n… [Đã rút gọn]`;
 }
 
+export function summarizeExerciseVisualContext(exercise: SemiEssayExercise): readonly string[] {
+  const lines: string[] = [];
+
+  if (exercise.figure) {
+    if (exercise.figure.kind === 'plot-2d') {
+      const pathDesc = exercise.figure.paths
+        .map(p => {
+          const pts = p.points
+            .map(pt => `${pt.label ? `${pt.label}` : ''}(${pt.x}, ${pt.y})`)
+            .join(' → ');
+          return `${p.label ?? p.id}: ${pts}`;
+        })
+        .join('; ');
+      lines.push(
+        `Hình vẽ đề bài (${exercise.figure.yLabel} theo ${exercise.figure.xLabel}): ${exercise.figure.alt}${
+          pathDesc ? ` | Các đường: ${pathDesc}` : ''
+        }`,
+      );
+    } else {
+      lines.push(`Hình minh họa hệ vật (${exercise.figure.scene}): ${exercise.figure.alt}`);
+    }
+  }
+
+  for (let i = 0; i < exercise.steps.length; i += 1) {
+    const step = exercise.steps[i]!;
+    if (step.kind !== 'diagram') continue;
+    const prefix = `Biểu đồ Bước ${i + 1} (${step.title})`;
+    const spec = step.spec;
+    if (spec.kind === 'heatmap') {
+      const rowsText = spec.values
+        .map((row, rIdx) => `hàng ${rIdx}: [${row.join(', ')}] ${spec.unit}`)
+        .join('; ');
+      const flowText = spec.flowPoints
+        ? ` | Điểm khảo sát: ${spec.flowPoints.map(fp => `${fp.label}(hàng ${fp.row}, cột ${fp.col})`).join(', ')}`
+        : '';
+      lines.push(`${prefix} — lưới ${spec.rows}×${spec.cols} (${spec.xLabel}, ${spec.yLabel}): ${rowsText}${flowText}`);
+    } else if (spec.kind === 'curve-2d') {
+      const pts = spec.points
+        .map(pt => `${pt.label ? `${pt.label}` : ''}(${pt.x} ${spec.xUnit}, ${pt.y} ${spec.yUnit})`)
+        .join(' → ');
+      const segs = spec.segments.map(s => s.label).join('; ');
+      lines.push(`${prefix} — đồ thị ${spec.yLabel}(${spec.xLabel}): các điểm ${pts}${segs ? ` | các giai đoạn: ${segs}` : ''}`);
+    } else if (spec.kind === 'fbd') {
+      const bodies = spec.bodies
+        .map(b => `${b.label}${b.surfaceAngle !== undefined ? ` (mặt nghiêng ${b.surfaceAngle}°)` : ''}`)
+        .join(', ');
+      lines.push(`${prefix} — phân tích lực trên: ${bodies}`);
+    } else if (spec.kind === 'mo-diagram') {
+      lines.push(
+        `${prefix} — giản đồ MO phân tử/ion ${spec.speciesLabel} (${spec.atomLeft}–${spec.atomRight}, tổng ${spec.expectedTotalElectrons} electron hóa trị)`,
+      );
+    } else if (spec.kind === 'prob-tree') {
+      const branches = spec.branches.map(b => `${b.label} (${b.symbolLatex})`).join(', ');
+      lines.push(`${prefix} — cây xác suất ${spec.rootLabel} → biến cố ${spec.eventLabel} (${branches})`);
+    } else if (spec.kind === 'balance-flow') {
+      lines.push(`${prefix} — cân bằng năng lượng hệ ${spec.systemLabel}: ${spec.initialLabel} → ${spec.finalLabel}`);
+    } else if (spec.kind === 'algo-trace') {
+      lines.push(
+        `${prefix} — bảng truy vết ${spec.structureLabel} (${spec.rowLabels.join(', ')} × ${spec.colLabels.join(', ')})`,
+      );
+    } else if (spec.kind === 'proof-dag') {
+      lines.push(`${prefix} — sơ đồ suy luận mệnh đề: ${spec.theoremStatement}`);
+    } else if (spec.kind === 'parsons-flow') {
+      lines.push(`${prefix} — sắp xếp khối mã ${spec.language} (${spec.blocks.length} dòng)`);
+    }
+  }
+
+  return lines;
+}
+
 export function buildGroundedEssayContextPacket(params: {
   readonly mode: CoachingPromptMode;
   readonly canon: CourseConventionCanon;
@@ -444,6 +515,7 @@ export function buildGroundedEssayContextPacket(params: {
   readonly draft: WrittenStepDraft;
   readonly chunks: readonly CurriculumChunk[];
   readonly effectiveTheoryAnchors: readonly TheoryAnchor[];
+  readonly internalReferenceForWebMcp?: boolean | undefined;
   readonly nowIso?: string | undefined;
 }): GroundedEssayContextPacket {
   const {
@@ -456,6 +528,7 @@ export function buildGroundedEssayContextPacket(params: {
     draft,
     chunks,
     effectiveTheoryAnchors,
+    internalReferenceForWebMcp = false,
   } = params;
 
   const searchQuery = [
@@ -479,19 +552,50 @@ export function buildGroundedEssayContextPacket(params: {
 
   const allHints = [...(step.hint ? [step.hint] : []), ...(step.hints ?? [])];
 
-  const pedagogicalContract =
-    mode === 'socratic-hint' || !draft.modelRevealed
+  const combinedPromptText = `${exercise.prompt}\n${step.prompt}`;
+  const isMultiPropositionQuestion =
+    (/\*\*\([A-D]\)\*\*/.test(combinedPromptText) && /\*\*\([B-E]\)\*\*/.test(combinedPromptText)) ||
+    (/(?:mệnh đề|khẳng định|phát biểu|tương đương)\s+nào/i.test(combinedPromptText) &&
+      /\([A-D]\)/.test(combinedPromptText)) ||
+    /chọn\s+tất\s+cả/i.test(combinedPromptText);
+
+  const multiPropositionAntiSpoilerRule =
+    'QUY TẮC CHỐNG LỘ ĐÁP ÁN CÂU NHIỀU MỆNH ĐỀ (A)..(D) / ĐÚNG–SAI: TUYỆT ĐỐI KHÔNG xác nhận đúng/sai cho từng mệnh đề riêng lẻ, KHÔNG chỉ đích danh duy nhất mệnh đề đang chọn nhầm khiến sinh viên suy ra tổ hợp đáp án, và KHÔNG viết sẵn biểu thức tương đương thay thế hộ sinh viên khi bài nháp mới chỉ ghi nhãn Đúng/Sai mà chưa trình bày phép biến đổi. Hãy yêu cầu sinh viên viết rõ phép kiểm chứng theo định nghĩa và đặt câu hỏi gợi mở trung lập để tự kiểm tra.';
+
+  const basePedagogicalContract =
+    mode === 'presentation-review'
       ? [
-          'Đóng vai Trợ giảng Socratic của Trường ĐHKHTN – ĐHQGHN (VNU-HUS).',
-          'CHỈ sử dụng khái niệm, định lý, ký hiệu thuộc bài học hiện tại và các bài tiên quyết đã liệt kê; TUYỆT ĐỐI KHÔNG dùng công cụ thuộc các chương chưa học.',
-          'KHÔNG viết hộ lời giải hoàn chỉnh và KHÔNG tiết lộ kết quả cuối cùng thay sinh viên.',
-          'Đối chiếu bài nháp của sinh viên với từng tiêu chí trong rubricCriteria để đặt 1–3 câu hỏi gợi mở đúng chỗ đang thiếu hoặc nhầm điều kiện.',
+          'Đóng vai Giảng viên chấm cách trình bày tự luận của Trường ĐHKHTN – ĐHQGHN (VNU-HUS).',
+          'Kiểm tra chặt chẽ CÁCH TRÌNH BÀY KẾT QUẢ & LẬP LUẬN trên giấy A4 theo 4 trụ cột: (1) Bố cục dẫn dắt từng bước (nêu định lý/công thức gốc trước khi thay số, dùng dấu suy ra ⇒ hoặc tương đương ⇔ chuẩn xác); (2) Điều kiện xác định / điều kiện áp dụng định lý; (3) Quy ước ký hiệu, thuật ngữ và đơn vị chuẩn giáo trình ĐHKHTN (tuyệt đối không dùng kiến thức vượt chương chưa học); (4) Cách viết kết luận & trình bày kết quả cuối cùng rõ ràng, mạch lạc.',
+          draft.modelRevealed
+            ? 'Sinh viên đã mở lời giải đối chiếu: hãy so sánh trực tiếp bài viết với đáp án chuẩn & rubricCriteria, chỉ rõ bước đã đạt chuẩn trình bày, bước nhảy tắt/thiếu điều kiện và gợi ý cách diễn đạt lại kết luận cho đạt điểm tối đa.'
+            : 'Sinh viên không được xem lời giải mẫu trên trang thi: KHÔNG chép sẵn trọn vẹn lời giải hoặc đáp số cuối cùng hộ sinh viên; hãy nhận xét cụ thể lỗi trình bày, chỗ thiếu điều kiện, bước nhảy tắt hoặc sai ký hiệu/đơn vị vào conventionWarnings và đánh giá từng tiêu chí trong criterionFeedback.',
+          ...(!draft.modelRevealed && isMultiPropositionQuestion
+            ? [multiPropositionAntiSpoilerRule]
+            : []),
         ]
-      : [
-          'Đóng vai Trợ giảng Đối chiếu Tự luận của Trường ĐHKHTN – ĐHQGHN (VNU-HUS).',
-          'Sinh viên đã mở lời giải tham khảo và đang ở bước tự đối chiếu & sửa bài.',
-          'Hãy đối chiếu chi tiết bài nháp / bản sửa của sinh viên với từng tiêu chí rubricCriteria, chỉ rõ ý đã đạt, ý còn thiếu điều kiện chặt chẽ hoặc lệch ký hiệu giáo trình.',
-        ];
+      : mode === 'socratic-hint' || !draft.modelRevealed
+        ? [
+            'Đóng vai Trợ giảng Socratic của Trường ĐHKHTN – ĐHQGHN (VNU-HUS).',
+            'CHỈ sử dụng khái niệm, định lý, ký hiệu thuộc bài học hiện tại và các bài tiên quyết đã liệt kê; TUYỆT ĐỐI KHÔNG dùng công cụ thuộc các chương chưa học.',
+            'KHÔNG viết hộ lời giải hoàn chỉnh và KHÔNG tiết lộ kết quả cuối cùng thay sinh viên.',
+            'Đối chiếu bài nháp của sinh viên với từng tiêu chí trong rubricCriteria để đặt 1–3 câu hỏi gợi mở đúng chỗ đang thiếu hoặc nhầm điều kiện (nếu bài nháp mới ghi kết quả tắt mà chưa chứng minh, đặt status là "missing" hoặc "partial", không đánh "met" sớm).',
+            ...(isMultiPropositionQuestion ? [multiPropositionAntiSpoilerRule] : []),
+          ]
+        : [
+            'Đóng vai Trợ giảng Đối chiếu Tự luận của Trường ĐHKHTN – ĐHQGHN (VNU-HUS).',
+            'Sinh viên đã mở lời giải tham khảo và đang ở bước tự đối chiếu & sửa bài.',
+            'Hãy đối chiếu chi tiết bài nháp / bản sửa của sinh viên với từng tiêu chí rubricCriteria, chỉ rõ ý đã đạt, ý còn thiếu điều kiện chặt chẽ hoặc lệch ký hiệu giáo trình.',
+          ];
+
+  const pedagogicalContract = internalReferenceForWebMcp
+    ? [
+        ...basePedagogicalContract,
+        'BẢO MẬT ĐỀ THI: Trường referenceModelAnswer và rubricCriteria chỉ cung cấp ngầm qua WebMCP để đối chiếu tính chính xác & cách trình bày của sinh viên; TUYỆT ĐỐI KHÔNG chép lộ nguyên văn đáp án mẫu ra phần nhận xét hiển thị trên giao diện.',
+      ]
+    : basePedagogicalContract;
+
+  const visualContextSummary = summarizeExerciseVisualContext(exercise);
 
   return {
     schemaVersion: 1,
@@ -517,6 +621,7 @@ export function buildGroundedEssayContextPacket(params: {
       problemPrompt: exercise.prompt,
       given: exercise.given,
       theoryAnchors: effectiveTheoryAnchors,
+      ...(visualContextSummary.length > 0 ? { visualContextSummary } : {}),
     },
     activeStep: {
       id: step.id,
@@ -526,10 +631,12 @@ export function buildGroundedEssayContextPacket(params: {
       prompt: step.prompt,
       rubricCriteria: step.rubric,
       hints: allHints,
-      studentDraft: draft.response,
-      studentRevision: draft.revision,
+      studentDraft: convertStudentShorthandToLatex(draft.response),
+      studentRevision: convertStudentShorthandToLatex(draft.revision),
       modelRevealed: draft.modelRevealed,
-      ...(draft.modelRevealed ? { referenceModelAnswer: step.modelAnswer } : {}),
+      ...(draft.modelRevealed || internalReferenceForWebMcp
+        ? { referenceModelAnswer: step.modelAnswer }
+        : {}),
     },
     groundedExcerpts: hits.map(hit => ({
       citationLabel: `[${canon.academicCode} · ${hit.chunk.lessonTitle} § ${hit.chunk.sectionTitle}]`,
@@ -550,14 +657,14 @@ export function formatAskGeminiPromptPacket(
   packet: GroundedEssayContextPacket,
   options?: { readonly webMcpAvailable?: boolean | undefined },
 ): string {
-  if (options?.webMcpAvailable) {
-    return [
-      `Hãy đóng vai Trợ giảng Socratic học phần ${packet.course.code} (${packet.course.title}) của ĐHKHTN.`,
-      `1. Gọi công cụ WebMCP \`hus_get_essay_context\` trên trang này để đọc đề bài, thang tiêu chí rubric, trích đoạn giáo trình chuẩn và bài nháp hiện tại ở Bước ${packet.activeStep.stepNumber} (${packet.activeStep.id}).`,
-      `2. Nếu cần tra cứu thêm định nghĩa/định lý tiên quyết, gọi \`hus_search_curriculum\`.`,
-      `3. Không giải hộ trọn bài; hãy gửi kết quả đối chiếu và câu hỏi gợi mở về giao diện trang qua công cụ \`hus_submit_essay_coaching\`.`,
-    ].join('\n');
-  }
+  const dualPathHeader = options?.webMcpAvailable
+    ? [
+        '## 0. Chế độ kết nối tự thích ứng (WebMCP / ✨ Ask Gemini trên Chrome)',
+        `- **Nếu môi trường của bạn gọi được công cụ WebMCP:** Hãy gọi \`hus_get_essay_context\` với \`{ "mode": "${packet.mode}", "stepId": "${packet.activeStep.id}" }\` (kèm \`hus_search_curriculum\` khi cần) và đẩy nhận xét trực tiếp lên tờ giấy A4 qua \`hus_submit_essay_coaching\`.`,
+        '- **Nếu bạn đang chạy trên thanh bên ✨ Ask Gemini tiêu chuẩn (không có quyền gọi công cụ WebMCP):** **TUYỆT ĐỐI KHÔNG nhắc đến WebMCP và KHÔNG thông báo thiếu quyền gọi công cụ.** Hãy hướng dẫn trực tiếp ngay bên dưới dựa trên toàn bộ gói giáo trình & bài nháp đã đính kèm sẵn, đồng thời **bắt buộc xuất khối ```json ... ``` ở cuối câu trả lời** để sinh viên đồng bộ 1-click về giấy A4.',
+        '',
+      ]
+    : [];
 
   const excerptsBlock =
     packet.groundedExcerpts.length > 0
@@ -575,19 +682,31 @@ export function formatAskGeminiPromptPacket(
       ? packet.syllabusHorizon.unlearnedChaptersDoNotUse.join('; ')
       : 'Không có';
 
+  const headingTitle =
+    packet.mode === 'presentation-review'
+      ? `# Yêu cầu Kiểm tra Cách trình bày Tự luận ĐHKHTN (${packet.course.code} — ${packet.course.title})`
+      : `# Yêu cầu Trợ giảng Socratic bám sát Giáo trình ĐHKHTN (${packet.course.code} — ${packet.course.title})`;
+
   return [
-    `# Yêu cầu Trợ giảng Socratic bám sát Giáo trình ĐHKHTN (${packet.course.code} — ${packet.course.title})`,
+    headingTitle,
     '',
+    ...dualPathHeader,
     '## 1. Nguyên tắc bắt buộc',
     ...packet.pedagogicalContract.map(rule => `- ${rule}`),
     ...packet.course.notationRules.map(rule => `- Quy ước ký hiệu: ${rule}`),
     ...packet.course.forbiddenShortcutHints.map(rule => `- Lưu ý tránh giải tắt: ${rule}`),
     `- Bài đang học: **${packet.syllabusHorizon.currentLesson}** (${packet.syllabusHorizon.currentChapter})`,
-    `- Các chương CHƯA HỌC (không dùng để giải): ${unlearnedLine}`,
+    `- Các chương CHƯA HỌC (tuyệt đối không dùng để giải/gợi ý): ${unlearnedLine}`,
     '',
     '## 2. Đề bài & Yêu cầu bước hiện tại',
     `- **Bài tập:** ${packet.exercise.title}`,
     `- **Đề bài chung:** ${packet.exercise.problemPrompt}`,
+    ...(packet.exercise.visualContextSummary && packet.exercise.visualContextSummary.length > 0
+      ? [
+          '- **Dữ kiện hình vẽ / đồ thị đi kèm:**',
+          ...packet.exercise.visualContextSummary.map(line => `  - ${line}`),
+        ]
+      : []),
     `- **Bước ${packet.activeStep.stepNumber}/${packet.activeStep.totalSteps} (` +
       `\`${packet.activeStep.id}\`):** ${packet.activeStep.title}`,
     `- **Yêu cầu bước này:** ${packet.activeStep.prompt}`,
@@ -598,31 +717,45 @@ export function formatAskGeminiPromptPacket(
     '## 4. Trích đoạn giáo trình ĐHKHTN được phép áp dụng',
     excerptsBlock,
     '',
-    '## 5. Bài làm hiện tại của sinh viên',
-    '```text',
+    '## 5. Bài làm hiện tại của sinh viên trên giấy A4 (đã biên dịch sang chuẩn LaTeX)',
+    '```markdown',
     packet.activeStep.studentDraft.trim() || '(Sinh viên chưa viết nháp — hãy gợi mở cách bắt đầu dòng đầu tiên)',
     '```',
     ...(packet.activeStep.studentRevision.trim()
-      ? ['**Bản sửa hiện tại:**', '```text', packet.activeStep.studentRevision.trim(), '```']
+      ? ['**Bản sửa hiện tại (chuẩn LaTeX):**', '```markdown', packet.activeStep.studentRevision.trim(), '```']
       : []),
     ...(packet.activeStep.referenceModelAnswer
       ? ['**Lời giải tham khảo (chỉ dùng để đối chiếu bản sửa):**', packet.activeStep.referenceModelAnswer]
       : []),
     '',
-    '## 6. Định dạng trả lời (để nhập ngược về trang HUS Learning Hub)',
-    'Sau phần giải thích ngắn gọn trên khung chat, hãy kèm **đúng 1 khối JSON** ở cuối theo mẫu sau (giữ nguyên mã `stepId` và `criterionId`):',
+    '## 6. Định dạng trả lời bắt buộc (để đồng bộ 1-click về giấy A4 trên HUS Learning Hub)',
+    ...(packet.mode === 'socratic-hint'
+      ? [
+          'Sau phần gợi mở Socratic ngắn gọn trên khung chat, hãy kèm **đúng 1 khối JSON hợp lệ** ở cuối theo mẫu sau (giữ nguyên mã `exerciseId`, `stepId`, `criterionId`; nhân đôi dấu gạch chéo ngược `\\\\` cho các lệnh LaTeX trong chuỗi JSON):',
+        ]
+      : [
+          '- **Quy tắc chấm máy thang 10 chuẩn ĐHKHTN (Mức 1):** Tự giải và kiểm chứng độc lập phép biến đổi + kết quả cuối cùng của sinh viên; chấm `score` trên thang `maxScore: 10` (bậc `0.25` hoặc `0.5`). Đặt `"verdict": "pass"` khi và chỉ khi hướng giải & kết quả đúng, đạt `score >= 7.0` trên `10` và **không có tiêu chí nào trong `criterionFeedback` bị `"missing"`** (cho phép lỗi trình bày nhỏ ở mức `"partial"`); ngược lại bắt buộc đặt `"verdict": "not-pass"`.',
+          '- Sau phần nhận xét trên khung chat, hãy kèm **đúng 1 khối JSON hợp lệ** ở cuối theo mẫu sau để hệ thống website tự động chấm điểm & kích hoạt trạng thái PASS / CHƯA PASS (nhân đôi `\\\\` cho lệnh LaTeX trong chuỗi JSON):',
+        ]),
     '```json',
     JSON.stringify(
       {
         version: 1,
         exerciseId: packet.exercise.id,
         stepId: packet.activeStep.id,
+        ...(packet.mode === 'socratic-hint'
+          ? {}
+          : {
+              verdict: 'pass',
+              score: 8.5,
+              maxScore: 10,
+            }),
         summary: 'Nhận xét tổng quan ngắn gọn 1–2 câu bám sát giáo trình.',
-        socraticQuestions: ['Câu hỏi gợi mở 1 (có thể dùng $LaTeX$)?'],
+        socraticQuestions: ['Câu hỏi gợi mở 1 (dùng $LaTeX$ chuẩn ĐHKHTN)?'],
         criterionFeedback: packet.activeStep.rubricCriteria.map(c => ({
           criterionId: c.id,
           status: 'partial',
-          comment: 'Nhận xét cụ thể cho tiêu chí này.',
+          comment: 'Nhận xét cụ thể cho tiêu chí này (không tiết lộ đáp án cuối nếu đang gợi mở).',
         })),
         conventionWarnings: [],
         citedSections: packet.groundedExcerpts.slice(0, 2).map(e => e.citationLabel),
@@ -654,7 +787,7 @@ export function composeExamReadyEssay(
     if (step.kind === 'written-reasoning') {
       const draft = drafts[step.id];
       const text = draft?.revision.trim() || draft?.response.trim() || step.summaryTemplate;
-      lines.push(text);
+      lines.push(convertStudentShorthandToLatex(text));
     } else {
       lines.push(step.summaryTemplate);
     }

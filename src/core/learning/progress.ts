@@ -1,6 +1,12 @@
 import type { LearningContent, ProgressAction, ProgressState } from '../../domain/workspace';
-import type { Course } from '../../domain/learning';
+import type { Course, Lesson } from '../../domain/learning';
 import { courseLessons } from './content';
+
+export function isPracticeOnlyCourse(
+  course: Pick<Course, 'studyMode'> | undefined,
+): boolean {
+  return course?.studyMode === 'practice-only';
+}
 
 export function emptyProgress(): ProgressState {
   return { schemaVersion: 1, completedLessonIds: [], bookmarkedResourceIds: [], recentTopics: [], attempts: [] };
@@ -43,6 +49,59 @@ export function courseProgress(lessonIds: readonly string[], state: ProgressStat
   return lessonIds.length ? Math.round(100 * lessonIds.filter(id => state.completedLessonIds.includes(id)).length / lessonIds.length) : 0;
 }
 
+export function completedCourseLessonIds(
+  course: Pick<Course, 'studyMode'> | undefined,
+  lessons: readonly Pick<Lesson, 'id' | 'exerciseIds'>[],
+  state: ProgressState,
+): readonly string[] {
+  const completedSet = new Set(state.completedLessonIds);
+  if (!isPracticeOnlyCourse(course)) {
+    return lessons.filter(lesson => completedSet.has(lesson.id)).map(lesson => lesson.id);
+  }
+  const solvedExerciseIds = new Set(
+    state.attempts.filter(attempt => attempt.correct).map(attempt => attempt.exerciseId),
+  );
+  return lessons
+    .filter(
+      lesson =>
+        completedSet.has(lesson.id) ||
+        lesson.exerciseIds.some(exerciseId => solvedExerciseIds.has(exerciseId)),
+    )
+    .map(lesson => lesson.id);
+}
+
+export function courseEffectiveProgress(
+  course: Pick<Course, 'studyMode'> | undefined,
+  lessons: readonly Pick<Lesson, 'id' | 'exerciseIds'>[],
+  state: ProgressState,
+): number {
+  if (lessons.length === 0) return 0;
+  return Math.round((100 * completedCourseLessonIds(course, lessons, state).length) / lessons.length);
+}
+
+export function effectiveCompletedLessonIds(
+  courses: readonly Course[],
+  content: LearningContent,
+  state: ProgressState,
+): readonly string[] {
+  const merged = new Set<string>(state.completedLessonIds);
+  for (const course of courses) {
+    if (!isPracticeOnlyCourse(course)) continue;
+    for (const id of completedCourseLessonIds(course, courseLessons(content, course), state)) {
+      merged.add(id);
+    }
+  }
+  return [...merged];
+}
+
 export function subjectProgress(content: LearningContent, courses: readonly Course[], subjectId: string, state: ProgressState): number {
-  return courseProgress(courses.filter(c => c.subjectId === subjectId).flatMap(c => courseLessons(content, c).map(l => l.id)), state);
+  const targetCourses = courses.filter(c => c.subjectId === subjectId);
+  let totalLessons = 0;
+  let completedLessons = 0;
+  for (const course of targetCourses) {
+    const lessons = courseLessons(content, course);
+    totalLessons += lessons.length;
+    completedLessons += completedCourseLessonIds(course, lessons, state).length;
+  }
+  return totalLessons > 0 ? Math.round((100 * completedLessons) / totalLessons) : 0;
 }

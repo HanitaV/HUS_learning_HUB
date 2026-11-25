@@ -1,5 +1,23 @@
 # Agent handoff
 
+## Sync Exam Workbench, Inline Multi-Step Labs, `<ProblemFigure />`, Realtime KaTeX A4 & Dual-Path WebMCP from `main` — 2026-11-25 (Antigravity)
+
+Synced all latest platform capabilities from `main` (`abc7cb0`) onto the clean `template` branch (`public/template` on `https://github.com/HanitaV/HUS_learning_HUB.git`) while preserving zero course/private content:
+
+- **Exam Workbench (`/#/exams` & `ChapterExamPage`), Ruled A4 & Realtime KaTeX Preview**:
+  - Synced `ExamPracticePage.tsx` (adding a clean zero-course starter state when `availableCourses.length === 0`), `ChapterExamPage.tsx`, `ExamWebMcpStatusBar.tsx`, `ExamObjectiveQuestionCard.tsx`, `ExamInlineCodeLabSection.tsx`, `RuledA4Sheet.tsx`, `RealtimeMathPreview.tsx`, `realtime-math-preview.ts`, and `webmcp-essay-adapters.ts` (`100% Tự luận giấy A4` ↔ `Đề hỗn hợp`).
+  - Synced 1-to-1 toolbar symbol & 95+ `\` shorthand parity (`math-shorthand.ts`, `math-symbols.ts` with empty `bySubject`/`byCourse`/`byChapter` presets) and `.hus-markdown` zero-specificity GFM table/list styling (`Markdown.tsx`, `index.css`).
+- **Inline Multi-Step Exercises, `<ProblemFigure />` & Live Interactive Step Drafts**:
+  - Synced `InlineSemiEssayExerciseCard.tsx`, `SemiEssayInteractiveSteps.tsx`, `ProblemFigure.tsx` + `problem-figure.ts` (`plot-2d` & 19 `physics-schematic` scenes), `interactive-step-drafts.ts`, `semi-essay-step-progress.ts`, and live draft persistence across all 9 diagram modules (`src/modules/diagrams/*.tsx`).
+  - Synced declarative `studyMode?: 'default' | 'practice-only'` support across `learning.ts`, `progress.ts`, `LessonPage.tsx`, `CoursePage.tsx`, `CataloguePage.tsx`, `CoursesPage.tsx`, and `ProgressPage.tsx` (retaining `CataloguePage.tsx`'s zero-course template empty state).
+- **Dual-Path Adaptive WebMCP & Permanent Zero-API-Key Policy**:
+  - Synced `EssayWebMcpCoachPanel.tsx`, `curriculum-rag.ts` (including `summarizeExerciseVisualContext` and multi-statement Socratic anti-spoiler), `tutor-feedback-parser.ts` (LaTeX-safe JSON escape repair, Mức-1 `/10` grading, batch whole-exam import), and `webmcp-essay-bridge.ts` (retaining generic `https://your-domain.example` placeholder), plus `AGENTS.md`, `docs/SYSTEM_GUIDE.md`, and `docs/architecture/WRITTEN_PRACTICE.md`.
+- **Verification**:
+  - Added self-contained unit tests (`exam-practice-webmcp.test.ts`, `practice-only-courses.test.ts`, `problem-figure.test.ts`, `interactive-step-drafts.test.ts`, `visual-context-and-exam-store.test.ts`) and updated `workspace.spec.ts` to cover `/#/exams` across `360px`–`1440px`.
+  - Verified with `npm run build` (`tsc --noEmit` + Vitest + Vite `dist/`) and `npm run test:e2e` (Desktop & Mobile Chromium).
+
+---
+
 ## Public Template Branch (`template`) — 2026-11-25 (Antigravity)
 
 Prepared a clean, content-free public template branch (`template`, orphan history with zero private content or commit history) for `https://github.com/HanitaV/HUS_learning_HUB`:

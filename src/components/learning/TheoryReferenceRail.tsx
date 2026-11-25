@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import type { ProblemFigureSpec } from '../../domain/problem-figure';
 import type { GivenQuantity, TheoryAnchor } from '../../domain/semi-essay';
 import { Badge } from '../ui/Badge';
 import { BookOpenIcon, ChevronDownIcon } from '../ui/Icons';
 import Markdown from './Markdown';
+import { ProblemFigure } from './ProblemFigure';
 
 export interface TheoryReferenceRailProps {
   readonly problemPrompt: string;
+  readonly figure?: ProblemFigureSpec | undefined;
   readonly given: readonly GivenQuantity[];
   readonly theoryAnchors: readonly TheoryAnchor[];
   readonly activeAnchorIds: readonly string[];
@@ -15,8 +18,9 @@ export interface TheoryReferenceRailProps {
   readonly lessonUrl: string;
 }
 
-export function TheoryReferenceRail({
+export const TheoryReferenceRail = memo(function TheoryReferenceRail({
   problemPrompt,
+  figure,
   given,
   theoryAnchors,
   activeAnchorIds,
@@ -25,21 +29,29 @@ export function TheoryReferenceRail({
   lessonUrl,
 }: TheoryReferenceRailProps) {
   const [mobilePanel, setMobilePanel] = useState<'none' | 'prompt' | 'theory'>('none');
-  const activeSet = new Set(activeAnchorIds);
+  const activeSet = useMemo(() => new Set(activeAnchorIds), [activeAnchorIds]);
 
-  const sortedAnchors = [...theoryAnchors].sort((a, b) => {
-    const aActive = activeSet.has(a.id) ? 0 : 1;
-    const bActive = activeSet.has(b.id) ? 0 : 1;
-    return aActive - bActive;
-  });
+  const sortedAnchors = useMemo(
+    () =>
+      [...theoryAnchors].sort((a, b) => {
+        const aActive = activeSet.has(a.id) ? 0 : 1;
+        const bActive = activeSet.has(b.id) ? 0 : 1;
+        return aActive - bActive;
+      }),
+    [theoryAnchors, activeSet],
+  );
 
-  const activeCount = theoryAnchors.filter(a => activeSet.has(a.id)).length;
+  const activeCount = useMemo(
+    () => theoryAnchors.filter(a => activeSet.has(a.id)).length,
+    [theoryAnchors, activeSet],
+  );
 
   const renderPromptAndGiven = () => (
     <div className="space-y-4">
       <div className="text-sm leading-relaxed text-ink [&>p:first-child]:!mt-0 [&>p:last-child]:!mb-0">
         <Markdown>{problemPrompt}</Markdown>
       </div>
+      {figure ? <ProblemFigure figure={figure} /> : null}
       {given.length > 0 ? (
         <div className="border-t border-border pt-3.5">
           <h3 className="mb-2 text-xs font-semibold text-ink-muted">Dữ kiện đã cho</h3>
@@ -194,4 +206,4 @@ export function TheoryReferenceRail({
       </aside>
     </>
   );
-}
+});

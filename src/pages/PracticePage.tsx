@@ -305,6 +305,14 @@ export default function PracticePage() {
             at: new Date().toISOString(),
           });
         }}
+        onRecordTutorAttempt={(passed, at) => {
+          progressStore.dispatch({
+            type: 'attempt',
+            exerciseId: exercise.id,
+            correct: passed,
+            at,
+          });
+        }}
       />
 
       {LazyInlineCodeLab ? (

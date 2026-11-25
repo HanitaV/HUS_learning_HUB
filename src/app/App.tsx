@@ -2,10 +2,15 @@ import { lazy } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AppLayout } from './layouts/AppLayout';
-import { preloadCataloguePage, preloadCoursesPage } from './route-transition';
+import {
+  preloadCataloguePage,
+  preloadCoursesPage,
+  preloadExamPracticePage,
+} from './route-transition';
 
 const CataloguePage = lazy(preloadCataloguePage);
 const CoursesPage = lazy(preloadCoursesPage);
+const ExamPracticePage = lazy(preloadExamPracticePage);
 const CoursePage = lazy(() => import('../pages/CoursePage'));
 const ChapterExamPage = lazy(() => import('../pages/ChapterExamPage'));
 const LessonPage = lazy(() => import('../pages/LessonPage'));
@@ -23,6 +28,7 @@ export function App() {
           <Route element={<AppLayout />}>
             <Route index element={<CataloguePage />} />
             <Route path="courses" element={<CoursesPage />} />
+            <Route path="exams" element={<ExamPracticePage />} />
             <Route path="courses/:courseId" element={<CoursePage />} />
             <Route path="courses/:courseId/chapters/:chapterId/exam" element={<ChapterExamPage />} />
             <Route path="courses/:courseId/lessons/:lessonId" element={<LessonPage />} />
