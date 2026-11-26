@@ -11,7 +11,9 @@ import type {
 } from '../domain/chapter-exam';
 import type { CodeLanguage } from '../domain/code-lab';
 import type {
+  CoachingHistoryEntry,
   CoachingPromptMode,
+  GroundedEssayContextPacket,
   ReasoningScaffoldTemplate,
   StepCoachingLifecycleState,
   TutorCoachingFeedback,
@@ -32,37 +34,20 @@ import {
 } from '../core/learning/chapter-exam';
 import { courseLessons } from '../core/learning/content';
 import {
-  buildCurriculumHorizon,
-  buildGroundedEssayContextPacket,
-  indexLessonMarkdownChunks,
-  searchCurriculumChunks,
-  synthesizeFallbackTheoryAnchors,
-} from '../core/learning/curriculum-rag';
-import { emptyWrittenStepDraft } from '../core/learning/semi-essay';
-import {
   deriveStepCoachingState,
-  didExercisePassViaTutor,
   formatScoreVi,
-  syncCriteriaFromCoachingFeedback,
 } from '../core/learning/webmcp-essay-adapters';
 import {
-  loadStoredTutorFeedback,
   parseBatchExternalTutorFeedback,
   parseExternalTutorFeedback,
-  saveStoredTutorFeedback,
 } from '../infrastructure/ai/tutor-feedback-parser';
-import {
-  detectWebMcpSupport,
-  formatWholeExamWebMcpPrompt,
-  registerEssayWebMcpTools,
-  type ExamPaperWebMcpOverview,
-} from '../infrastructure/ai/webmcp-essay-bridge';
+import { formatWholeExamWebMcpPrompt } from '../infrastructure/ai/webmcp-essay-bridge';
 import { courseRegistry, getSubjectModule, subjectList } from '../infrastructure/content/catalogue';
 import {
   learningContent,
   loadCourseExercises,
-  loadLessonMarkdown,
 } from '../infrastructure/content/learning';
+import { useExamWebMcpBridge } from '../app/useExamWebMcpBridge';
 import {
   clearInteractiveStepDraftsByPrefix,
 } from '../infrastructure/practice/interactive-step-drafts';
@@ -136,6 +121,7 @@ interface ExamWrittenStepItemProps {
   readonly webMcpAvailable: boolean;
   readonly symbolContext: MathSymbolContext | undefined;
   readonly stepCoaching: TutorCoachingFeedback | undefined;
+  readonly stepCoachingHistory?: readonly CoachingHistoryEntry[] | undefined;
   readonly onActivateStep: (stepId: string) => void;
   readonly onChangeResponse: (stepId: string, value: string) => void;
   readonly onBuildPacket: (
@@ -143,7 +129,7 @@ interface ExamWrittenStepItemProps {
     step: WrittenReasoningStep,
     stepNumber: number,
     mode: CoachingPromptMode,
-  ) => ReturnType<typeof buildGroundedEssayContextPacket> | null;
+  ) => GroundedEssayContextPacket | null;
   readonly onApplyFeedback: (exercise: SemiEssayExercise, feedback: TutorCoachingFeedback) => void;
   readonly onClearFeedback: (exercise: SemiEssayExercise, stepId: string) => void;
 }
@@ -163,6 +149,7 @@ const ExamWrittenStepItem = memo(function ExamWrittenStepItem({
   webMcpAvailable,
   symbolContext,
   stepCoaching,
+  stepCoachingHistory,
   onActivateStep,
   onChangeResponse,
   onBuildPacket,
@@ -222,6 +209,7 @@ const ExamWrittenStepItem = memo(function ExamWrittenStepItem({
           isActiveTarget={isActiveTarget}
           onActivateTarget={() => onActivateStep(step.id)}
           coachingFeedback={stepCoaching}
+          coachingHistory={stepCoachingHistory}
           getGroundedPacket={mode => onBuildPacket(exercise, step, stepNumber, mode)!}
           onImportFeedbackText={rawText => {
             const parsed = parseExternalTutorFeedback(rawText, exercise, step.id, 'clipboard');
@@ -500,9 +488,31 @@ export default function ExamPracticePage() {
   const [draft, setDraft] = useState<ChapterExamDraft>(
     () => storedSession?.draft ?? EMPTY_DRAFT,
   );
-  const [pinnedExerciseIds, setPinnedExerciseIds] = useState<readonly string[] | undefined>(
-    undefined,
-  );
+  const [pinnedExerciseIds, setPinnedExerciseIds] = useState<readonly string[] | undefined>(() => {
+    const raw = searchParams.get('pinned');
+    if (!raw) return undefined;
+    const ids = raw
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    return ids.length > 0 ? ids : undefined;
+  });
+
+  useEffect(() => {
+    const raw = searchParams.get('pinned');
+    if (!raw) return;
+    const ids = raw
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (ids.length === 0) return;
+    setPinnedExerciseIds(prev => {
+      if (prev && prev.length === ids.length && prev.every((id, idx) => id === ids[idx])) {
+        return prev;
+      }
+      return ids;
+    });
+  }, [searchParams]);
   const [coachedSnapshotByStepId, setCoachedSnapshotByStepId] = useState<
     Readonly<Record<string, string>>
   >({});
@@ -621,69 +631,6 @@ export default function ExamPracticePage() {
     return entries;
   }, [paper.items]);
 
-  const writtenStepMap = useMemo(
-    () => new Map(writtenStepEntries.map(entry => [entry.step.id, entry])),
-    [writtenStepEntries],
-  );
-
-  const [activeWebMcpStepId, setActiveWebMcpStepId] = useState<string>('');
-  const resolvedActiveStepId =
-    activeWebMcpStepId && writtenStepMap.has(activeWebMcpStepId)
-      ? activeWebMcpStepId
-      : (writtenStepEntries[0]?.step.id ?? '');
-
-  const [webMcpAvailable, setWebMcpAvailable] = useState<boolean>(
-    () => detectWebMcpSupport().available,
-  );
-  const [markdownByLessonId, setMarkdownByLessonId] = useState<Readonly<Record<string, string>>>({});
-  const [coachingByStepId, setCoachingByStepId] = useState<
-    Readonly<Record<string, TutorCoachingFeedback>>
-  >({});
-
-  const evaluation = useMemo(
-    () => evaluateChapterExam(paper, draft, lessonOrder, coachingByStepId),
-    [paper, draft, lessonOrder, coachingByStepId],
-  );
-
-  // Hydrate persisted coaching feedback for active paper exercises
-  useEffect(() => {
-    const merged: Record<string, TutorCoachingFeedback> = {};
-    const seen = new Set<string>();
-    for (const { exercise } of writtenStepEntries) {
-      if (seen.has(exercise.id)) continue;
-      seen.add(exercise.id);
-      Object.assign(merged, loadStoredTutorFeedback(exercise));
-    }
-    setCoachingByStepId(merged);
-  }, [writtenStepEntries]);
-
-  // Load lesson Markdown on demand for active written items in the exam paper
-  useEffect(() => {
-    let active = true;
-    if (!course || writtenStepEntries.length === 0) return;
-    const targetLessonIds = [...new Set(writtenStepEntries.map(e => e.exercise.lessonId))];
-    Promise.all(
-      targetLessonIds.map(async lid => {
-        try {
-          const md = await loadLessonMarkdown(lid);
-          return [lid, md] as const;
-        } catch {
-          return null;
-        }
-      }),
-    ).then(pairs => {
-      if (!active) return;
-      const loaded: Record<string, string> = {};
-      for (const pair of pairs) {
-        if (pair) loaded[pair[0]] = pair[1];
-      }
-      setMarkdownByLessonId(prev => ({ ...prev, ...loaded }));
-    });
-    return () => {
-      active = false;
-    };
-  }, [course, writtenStepEntries]);
-
   const scopeLabel = useMemo(() => {
     if (!course) return '';
     if (!activeChapter) return `Toàn học phần (${courseChapters.length} chương)`;
@@ -692,262 +639,41 @@ export default function ExamPracticePage() {
     return hasPrefix ? activeChapter.title : `Chương ${idx + 1}: ${activeChapter.title}`;
   }, [course, activeChapter, courseChapters.length]);
 
-  const buildExamStepPacket = useCallback(
-    (
-      entry: {
-        readonly exercise: SemiEssayExercise;
-        readonly step: WrittenReasoningStep;
-        readonly stepNumber: number;
-      },
-      mode: CoachingPromptMode,
-      fromWebMcp = false,
-    ) => {
-      if (!course || !canon) return null;
-      const horizon = buildCurriculumHorizon(course, learningContent, entry.exercise.lessonId);
-      const chunks = indexLessonMarkdownChunks({
-        course,
-        content: learningContent,
-        targetLessonId: entry.exercise.lessonId,
-        markdownByLessonId,
-      });
-      const stepIdx = Math.max(
-        0,
-        entry.exercise.steps.findIndex(s => s.id === entry.step.id),
-      );
-      const effectiveAnchors = synthesizeFallbackTheoryAnchors(
-        chunks,
-        entry.exercise,
-        stepIdx,
-      ).anchors;
-      return buildGroundedEssayContextPacket({
-        mode,
-        canon,
-        horizon,
-        exercise: entry.exercise,
-        step: entry.step,
-        stepNumber: entry.stepNumber,
-        draft: {
-          ...emptyWrittenStepDraft(),
-          response: draft.writtenResponses[entry.step.id] ?? '',
-          reviewedCriterionIds: draft.checkedRubricIds[entry.step.id] ?? [],
-          modelRevealed: false,
-        },
-        chunks,
-        effectiveTheoryAnchors: effectiveAnchors,
-        internalReferenceForWebMcp: fromWebMcp && mode !== 'socratic-hint',
-      });
-    },
-    [course, canon, markdownByLessonId, draft.writtenResponses, draft.checkedRubricIds],
-  );
+  const examInteractiveDraftPrefix = course
+    ? `exam-practice:${course.id}:${effectiveChapterScope}:${questionSource}:${answerMode}:`
+    : '';
 
-  const buildExamOverview = useCallback(
-    (fromWebMcp = false): ExamPaperWebMcpOverview | null => {
-      if (!course || !canon) return null;
-      const steps = writtenStepEntries.map(entry => {
-        const text = draft.writtenResponses[entry.step.id] ?? '';
-        return {
-          questionNumber: entry.questionNumber,
-          exerciseId: entry.exercise.id,
-          exerciseTitle: entry.exercise.title,
-          stepId: entry.step.id,
-          stepTitle: entry.step.title,
-          problemPrompt: entry.exercise.prompt,
-          stepPrompt: entry.step.prompt,
-          rubricCriteria: entry.step.rubric,
-          studentDraft: text,
-          hasDraft: text.trim().length > 0,
-          ...(fromWebMcp ? { referenceModelAnswer: entry.step.modelAnswer } : {}),
-        };
-      });
-      return {
-        courseId: course.id,
-        courseCode: canon.academicCode,
-        courseTitle: course.title,
-        scopeLabel,
-        notationRules: canon.notationRules,
-        forbiddenShortcutHints: canon.forbiddenShortcutHints,
-        submitted,
-        totalQuestions: paper.items.length,
-        draftedStepCount: steps.filter(s => s.hasDraft).length,
-        steps,
-      };
-    },
-    [
-      course,
-      canon,
-      writtenStepEntries,
-      draft.writtenResponses,
-      scopeLabel,
-      submitted,
-      paper.items.length,
-    ],
-  );
-
-  const applyExamCoachingFeedback = useCallback(
-    (exercise: SemiEssayExercise, feedback: TutorCoachingFeedback) => {
-      const matchedEntry = liveBridgeRef.current.writtenStepMap.get(feedback.stepId);
-      if (matchedEntry) {
-        setLastCoachedQuestionNumber(matchedEntry.questionNumber);
-      }
-      const nextPreview = {
-        ...liveBridgeRef.current.coachingByStepId,
-        [feedback.stepId]: feedback,
-      };
-      const passVerdict = didExercisePassViaTutor(exercise, nextPreview);
-      if (passVerdict !== null) {
-        progressStore.dispatch({
-          type: 'attempt',
-          exerciseId: exercise.id,
-          correct: passVerdict,
-          at: feedback.receivedAt,
-        });
-      }
-      setCoachingByStepId(prev => {
-        const next = { ...prev, [feedback.stepId]: feedback };
-        const exerciseScoped: Record<string, TutorCoachingFeedback> = {};
-        for (const s of exercise.steps) {
-          if (next[s.id]) exerciseScoped[s.id] = next[s.id]!;
-        }
-        saveStoredTutorFeedback(exercise.id, exerciseScoped);
-        return next;
-      });
-      setDraft(prev => {
-        const currentText = prev.writtenResponses[feedback.stepId] ?? '';
-        setCoachedSnapshotByStepId(snapPrev => ({
-          ...snapPrev,
-          [feedback.stepId]: currentText,
-        }));
-        const existingChecked = prev.checkedRubricIds[feedback.stepId] ?? [];
-        const syncedChecked = syncCriteriaFromCoachingFeedback(existingChecked, feedback);
-        if (
-          syncedChecked.length === existingChecked.length &&
-          syncedChecked.every((id, idx) => id === existingChecked[idx])
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          checkedRubricIds: {
-            ...prev.checkedRubricIds,
-            [feedback.stepId]: syncedChecked,
-          },
-        };
-      });
-    },
-    [],
-  );
-
-  const clearExamStepCoaching = useCallback(
-    (exercise: SemiEssayExercise, stepId: string) => {
-      setCoachingByStepId(prev => {
-        const copy = { ...prev };
-        delete copy[stepId];
-        const exerciseScoped: Record<string, TutorCoachingFeedback> = {};
-        for (const s of exercise.steps) {
-          if (copy[s.id]) exerciseScoped[s.id] = copy[s.id]!;
-        }
-        saveStoredTutorFeedback(exercise.id, exerciseScoped);
-        return copy;
-      });
-    },
-    [],
-  );
-
-  const searchExamCurriculum = useCallback(
-    async (query: string, expandCourse: boolean) => {
-      if (!course) return [];
-      const activeEntry =
-        writtenStepMap.get(resolvedActiveStepId) ?? writtenStepEntries[0];
-      const targetLessonId = activeEntry?.exercise.lessonId ?? lessonOrder[0] ?? '';
-      let workingMap = markdownByLessonId;
-      if (expandCourse) {
-        const missingIds = lessonOrder.filter(lid => !workingMap[lid]);
-        if (missingIds.length > 0) {
-          const pairs = await Promise.all(
-            missingIds.map(async lid => {
-              try {
-                const md = await loadLessonMarkdown(lid);
-                return [lid, md] as const;
-              } catch {
-                return null;
-              }
-            }),
-          );
-          const extra: Record<string, string> = {};
-          for (const p of pairs) {
-            if (p) extra[p[0]] = p[1];
-          }
-          workingMap = { ...workingMap, ...extra };
-          setMarkdownByLessonId(workingMap);
-        }
-      }
-      const chunks = indexLessonMarkdownChunks({
-        course,
-        content: learningContent,
-        targetLessonId,
-        markdownByLessonId: workingMap,
-      });
-      return searchCurriculumChunks(chunks, query, { limit: 4, allowFutureChapters: false });
-    },
-    [course, writtenStepMap, resolvedActiveStepId, writtenStepEntries, lessonOrder, markdownByLessonId],
-  );
-
-  const liveBridgeRef = useRef({
-    writtenStepEntries,
+  const {
     writtenStepMap,
     resolvedActiveStepId,
+    setActiveWebMcpStepId,
+    webMcpAvailable,
     coachingByStepId,
-    buildExamStepPacket,
+    coachingHistoryByStepId,
+    buildStepPacket,
     buildExamOverview,
     applyExamCoachingFeedback,
-    searchExamCurriculum,
+    applyExamBatchCoachingFeedback,
+    clearExamStepCoaching,
+  } = useExamWebMcpBridge({
+    course,
+    canon,
+    scopeLabel,
+    submitted,
+    paper,
+    draft,
+    setDraft,
+    lessonOrder,
+    writtenStepEntries,
+    interactiveDraftPrefix: examInteractiveDraftPrefix || undefined,
+    setLastCoachedQuestionNumber,
+    setCoachedSnapshotByStepId,
   });
-  liveBridgeRef.current = {
-    writtenStepEntries,
-    writtenStepMap,
-    resolvedActiveStepId,
-    coachingByStepId,
-    buildExamStepPacket,
-    buildExamOverview,
-    applyExamCoachingFeedback,
-    searchExamCurriculum,
-  };
 
-  useEffect(() => {
-    if (!canon || writtenStepEntries.length === 0) return;
-    const registration = registerEssayWebMcpTools({
-      getExercise: requestedStepId => {
-        const lookupId = requestedStepId ?? liveBridgeRef.current.resolvedActiveStepId;
-        return (
-          liveBridgeRef.current.writtenStepMap.get(lookupId)?.exercise ??
-          liveBridgeRef.current.writtenStepEntries[0]!.exercise
-        );
-      },
-      getActiveStepId: () => liveBridgeRef.current.resolvedActiveStepId,
-      getContextPacket: (mode, requestedStepId) => {
-        const lookupId = requestedStepId ?? liveBridgeRef.current.resolvedActiveStepId;
-        const entry =
-          liveBridgeRef.current.writtenStepMap.get(lookupId) ??
-          liveBridgeRef.current.writtenStepEntries[0];
-        return entry ? liveBridgeRef.current.buildExamStepPacket(entry, mode, true) : null;
-      },
-      searchCurriculum: (query, expand) =>
-        liveBridgeRef.current.searchExamCurriculum(query, expand),
-      onReceiveFeedback: feedback => {
-        const entry =
-          liveBridgeRef.current.writtenStepMap.get(feedback.stepId) ??
-          liveBridgeRef.current.writtenStepEntries[0];
-        if (entry) {
-          liveBridgeRef.current.applyExamCoachingFeedback(entry.exercise, feedback);
-        }
-      },
-      getExamPaperOverview: () => liveBridgeRef.current.buildExamOverview(true),
-    });
-    setWebMcpAvailable(registration.support.available);
-    return () => {
-      registration.dispose();
-    };
-  }, [canon, writtenStepEntries.length]);
+  const evaluation = useMemo(
+    () => evaluateChapterExam(paper, draft, lessonOrder, coachingByStepId),
+    [paper, draft, lessonOrder, coachingByStepId],
+  );
 
   const handleChangeWrittenResponse = useCallback((stepId: string, val: string) => {
     setActiveWebMcpStepId(stepId);
@@ -1029,16 +755,6 @@ export default function ExamPracticePage() {
         code: snippet.code,
       }));
     },
-    [],
-  );
-
-  const buildStepPacketFromRef = useCallback(
-    (
-      exercise: SemiEssayExercise,
-      step: WrittenReasoningStep,
-      stepNumber: number,
-      mode: CoachingPromptMode,
-    ) => liveBridgeRef.current.buildExamStepPacket({ exercise, step, stepNumber }, mode),
     [],
   );
 
@@ -1196,16 +912,9 @@ export default function ExamPracticePage() {
     if (!parsed.ok) {
       return { ok: false, error: parsed.error };
     }
-    for (const fb of parsed.items) {
-      const entry = writtenStepMap.get(fb.stepId);
-      if (entry) {
-        applyExamCoachingFeedback(entry.exercise, fb);
-      }
-    }
+    applyExamBatchCoachingFeedback(parsed.items);
     return { ok: true, count: parsed.items.length };
   };
-
-  const examInteractiveDraftPrefix = `exam-practice:${course.id}:${effectiveChapterScope}:${questionSource}:${answerMode}:`;
 
   const handleShuffleNewPaper = () => {
     clearInteractiveStepDraftsByPrefix(examInteractiveDraftPrefix);
@@ -1315,14 +1024,47 @@ export default function ExamPracticePage() {
           </div>
         </div>
 
-        {/* Row 1: Course, Chapter Scope & Exact Count */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        {/* Row 1: Course, Chapter Scope & Exact Count (Declarative WebMCP Form) */}
+        <form
+          toolname="hus_configure_exam_paper"
+          tooldescription="Cấu hình đề luyện tập ĐHKHTN theo học phần, phạm vi chương và số lượng câu hỏi"
+          toolautosubmit=""
+          onSubmit={event => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const nextCourse = data.get('courseId');
+            const nextChapter = data.get('chapterScope');
+            const nextCount = data.get('questionCount');
+            if (typeof nextCourse === 'string' && nextCourse && nextCourse !== course.id) {
+              setSelectedCourseId(nextCourse);
+              setChapterScope('all');
+              syncUrlParams({ course: nextCourse, chapter: 'all' });
+            } else if (
+              typeof nextChapter === 'string' &&
+              nextChapter &&
+              nextChapter !== effectiveChapterScope
+            ) {
+              setChapterScope(nextChapter);
+              syncUrlParams({ chapter: nextChapter });
+            }
+            if (typeof nextCount === 'string' && nextCount) {
+              const parsedCount = Number(nextCount);
+              if (Number.isFinite(parsedCount) && parsedCount > 0) {
+                setCustomCount(parsedCount);
+                setSubmitted(false);
+              }
+            }
+          }}
+          className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+        >
           <div className="space-y-1">
             <label htmlFor="exam-practice-course" className="block text-xs font-medium text-ink-secondary">
               Học phần luyện đề
             </label>
             <select
               id="exam-practice-course"
+              name="courseId"
+              toolparamdescription="Mã định danh học phần muốn tạo đề (ví dụ: linear-algebra, mechanics-heat, general-chemistry)"
               value={course.id}
               onChange={e => {
                 const nextCourseId = e.target.value;
@@ -1350,6 +1092,8 @@ export default function ExamPracticePage() {
             </label>
             <select
               id="exam-practice-chapter"
+              name="chapterScope"
+              toolparamdescription="Phạm vi chương (all cho toàn học phần hoặc id chương cụ thể)"
               value={effectiveChapterScope}
               onChange={e => {
                 const nextScope = e.target.value;
@@ -1383,6 +1127,8 @@ export default function ExamPracticePage() {
               </label>
               <select
                 id="exam-practice-exact-count"
+                name="questionCount"
+                toolparamdescription="Số lượng câu hỏi trong đề luyện tập"
                 value={paper.targetCount}
                 onChange={e => {
                   setCustomCount(Number(e.target.value));
@@ -1398,7 +1144,7 @@ export default function ExamPracticePage() {
               </select>
             </div>
           ) : null}
-        </div>
+        </form>
 
         {/* Row 2: Compact Segmented Pills for Answer Mode, Source & Preset */}
         <div className="flex flex-wrap items-center gap-2.5">
@@ -1852,9 +1598,10 @@ export default function ExamPracticePage() {
                           webMcpAvailable={webMcpAvailable}
                           symbolContext={symbolContext}
                           stepCoaching={coachingByStepId[step.id]}
+                          stepCoachingHistory={coachingHistoryByStepId[step.id]}
                           onActivateStep={setActiveWebMcpStepId}
                           onChangeResponse={handleChangeWrittenResponse}
-                          onBuildPacket={buildStepPacketFromRef}
+                          onBuildPacket={buildStepPacket}
                           onApplyFeedback={applyExamCoachingFeedback}
                           onClearFeedback={clearExamStepCoaching}
                         />
@@ -1914,9 +1661,10 @@ export default function ExamPracticePage() {
                           webMcpAvailable={webMcpAvailable}
                           symbolContext={symbolContext}
                           stepCoaching={coachingByStepId[step.id]}
+                          stepCoachingHistory={coachingHistoryByStepId[step.id]}
                           onActivateStep={setActiveWebMcpStepId}
                           onChangeResponse={handleChangeWrittenResponse}
-                          onBuildPacket={buildStepPacketFromRef}
+                          onBuildPacket={buildStepPacket}
                           onApplyFeedback={applyExamCoachingFeedback}
                           onClearFeedback={clearExamStepCoaching}
                         />

@@ -1,11 +1,15 @@
 import type {
+  CoachingHistoryEntry,
   TutorCoachingFeedback,
   TutorCriterionFeedback,
   TutorCriterionStatus,
 } from '../../domain/curriculum-tutor';
 import type { EntityId } from '../../domain/learning';
 import type { SemiEssayExercise, WrittenReasoningStep } from '../../domain/semi-essay';
+import { repairJsonLatexEscapes } from '../../core/learning/json-repair';
 import { normalizeM1TutorGrade } from '../../core/learning/webmcp-essay-adapters';
+
+export { repairJsonLatexEscapes };
 
 export type ParseTutorFeedbackResult =
   | { readonly ok: true; readonly value: TutorCoachingFeedback }
@@ -19,104 +23,9 @@ const MAX_RAW_CHARS = 60_000;
 const MAX_SUMMARY_CHARS = 1_500;
 const MAX_ITEM_CHARS = 700;
 const VALID_STATUSES: ReadonlySet<TutorCriterionStatus> = new Set(['met', 'partial', 'missing']);
-const LATEX_AFTER_N_RE =
-  /^(?:eq\b|e\b|abla\b|u\b|otin\b|i\b|eg\b|atural\b|mid\b|less\b|gtr\b|leq\b|geq\b|sim\b|cong\b|parallel\b|vdash\b|subset|supset)/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * Safely repairs unescaped single-backslash LaTeX commands inside JSON string literals
- * (e.g. `\lim`, `\frac`, `\to`, `\tan`, `\beta`, `\neq`) without altering valid JSON escapes
- * (`\"`, `\\`, `\/`, `\uXXXX`, or real `\n` newlines).
- */
-export function repairJsonLatexEscapes(jsonSource: string): string {
-  let out = '';
-  let inString = false;
-  let i = 0;
-
-  while (i < jsonSource.length) {
-    const ch = jsonSource[i]!;
-    if (!inString) {
-      if (ch === '"') {
-        inString = true;
-      }
-      out += ch;
-      i += 1;
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = false;
-      out += ch;
-      i += 1;
-      continue;
-    }
-
-    if (ch !== '\\') {
-      // Escape literal unescaped newlines/tabs inside JSON strings if an LLM emitted raw multiline strings
-      if (ch === '\n') {
-        out += '\\n';
-      } else if (ch === '\r') {
-        out += '\\r';
-      } else if (ch === '\t') {
-        out += '\\t';
-      } else {
-        out += ch;
-      }
-      i += 1;
-      continue;
-    }
-
-    const next = jsonSource[i + 1];
-    if (next === undefined) {
-      out += '\\\\';
-      i += 1;
-      continue;
-    }
-
-    if (next === '"' || next === '\\' || next === '/') {
-      out += '\\' + next;
-      i += 2;
-      continue;
-    }
-
-    if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(jsonSource.slice(i + 2, i + 6))) {
-      out += jsonSource.slice(i, i + 6);
-      i += 6;
-      continue;
-    }
-
-    if (next === 'n') {
-      const rest = jsonSource.slice(i + 2, i + 14);
-      if (LATEX_AFTER_N_RE.test(rest)) {
-        out += '\\\\n';
-      } else {
-        out += '\\n';
-      }
-      i += 2;
-      continue;
-    }
-
-    if (next === 'b' || next === 'f' || next === 'r' || next === 't') {
-      const afterControl = jsonSource[i + 2] ?? '';
-      if (/^[a-zA-Z]$/.test(afterControl)) {
-        // LaTeX command starting with \b (\beta), \f (\frac), \r (\rightarrow), \t (\to, \tan, \theta, \text)
-        out += '\\\\' + next;
-      } else {
-        out += '\\' + next;
-      }
-      i += 2;
-      continue;
-    }
-
-    // Any other `\x` (such as `\lim`, `\arctan`, `\sim`, `\ln`, `\sqrt`, `\,`, `\{`) is invalid JSON -> double backslash
-    out += '\\\\' + next;
-    i += 2;
-  }
-
-  return out;
 }
 
 function parseJsonWithLatexRepair(candidate: string): unknown {
@@ -410,8 +319,79 @@ export function parseBatchExternalTutorFeedback(
   return { ok: true, items: validatedItems };
 }
 
+export const TUTOR_FEEDBACK_STORAGE_PREFIX = 'hus-learning-hub:tutor-feedback:v1:';
+const MAX_HISTORY_ENTRIES = 5;
+
 export function tutorFeedbackStorageKey(exerciseId: EntityId): string {
-  return `hus-learning-hub:tutor-feedback:v1:${exerciseId}`;
+  return `${TUTOR_FEEDBACK_STORAGE_PREFIX}${exerciseId}`;
+}
+
+function parseHistoryEntries(rawList: unknown): readonly CoachingHistoryEntry[] {
+  if (!Array.isArray(rawList)) return [];
+  const entries: CoachingHistoryEntry[] = [];
+  for (const raw of rawList.slice(-MAX_HISTORY_ENTRIES)) {
+    if (!isRecord(raw)) continue;
+    const summary = sanitizeText(raw.summary, MAX_SUMMARY_CHARS);
+    if (!summary) continue;
+    const receivedAt =
+      typeof raw.receivedAt === 'string' && raw.receivedAt.length <= 40
+        ? raw.receivedAt
+        : new Date().toISOString();
+    const source: 'webmcp' | 'clipboard' = raw.source === 'webmcp' ? 'webmcp' : 'clipboard';
+    const verdict =
+      raw.verdict === 'pass' || raw.verdict === 'not-pass' ? raw.verdict : undefined;
+    const score = typeof raw.score === 'number' && Number.isFinite(raw.score) ? raw.score : undefined;
+    const maxScore =
+      typeof raw.maxScore === 'number' && Number.isFinite(raw.maxScore) ? raw.maxScore : undefined;
+    const metCount =
+      typeof raw.metCount === 'number' && Number.isInteger(raw.metCount) && raw.metCount >= 0
+        ? raw.metCount
+        : 0;
+    const totalCriteria =
+      typeof raw.totalCriteria === 'number' &&
+      Number.isInteger(raw.totalCriteria) &&
+      raw.totalCriteria >= 0
+        ? raw.totalCriteria
+        : 0;
+    const conventionWarnings = sanitizeStringList(raw.conventionWarnings, 5, MAX_ITEM_CHARS);
+    const draftSnapshot =
+      typeof raw.draftSnapshot === 'string' && raw.draftSnapshot.length <= 4_000
+        ? raw.draftSnapshot
+        : undefined;
+    entries.push({
+      receivedAt,
+      source,
+      ...(verdict !== undefined ? { verdict } : {}),
+      ...(score !== undefined ? { score } : {}),
+      ...(maxScore !== undefined ? { maxScore } : {}),
+      metCount,
+      totalCriteria,
+      summary,
+      conventionWarnings,
+      ...(draftSnapshot !== undefined ? { draftSnapshot } : {}),
+    });
+  }
+  return entries;
+}
+
+export function loadStoredTutorFeedbackHistory(
+  exerciseId: EntityId,
+): Readonly<Record<string, readonly CoachingHistoryEntry[]>> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(tutorFeedbackStorageKey(exerciseId));
+    if (!raw || raw.length > MAX_RAW_CHARS) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.historyByStepId)) return {};
+    const out: Record<string, readonly CoachingHistoryEntry[]> = {};
+    for (const [stepId, val] of Object.entries(parsed.historyByStepId)) {
+      const list = parseHistoryEntries(val);
+      if (list.length > 0) out[stepId] = list;
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 export function loadStoredTutorFeedback(
@@ -448,11 +428,178 @@ export function saveStoredTutorFeedback(
 ): void {
   if (typeof window === 'undefined') return;
   try {
+    const existingHistory = loadStoredTutorFeedbackHistory(exerciseId);
     window.localStorage.setItem(
       tutorFeedbackStorageKey(exerciseId),
-      JSON.stringify({ version: 1, byStepId }),
+      JSON.stringify({
+        version: 1,
+        byStepId,
+        ...(Object.keys(existingHistory).length > 0 ? { historyByStepId: existingHistory } : {}),
+      }),
     );
   } catch {
     // Ignore storage quota / blocked localStorage errors gracefully
   }
+}
+
+export function saveStoredTutorFeedbackWithHistory(
+  exercise: SemiEssayExercise,
+  byStepId: Readonly<Record<string, TutorCoachingFeedback>>,
+  options?: {
+    readonly updatedStepId?: EntityId | undefined;
+    readonly draftSnapshot?: string | undefined;
+    readonly updatedEntries?: readonly {
+      readonly stepId: EntityId;
+      readonly draftSnapshot?: string | undefined;
+    }[] | undefined;
+  },
+): Readonly<Record<string, readonly CoachingHistoryEntry[]>> {
+  const existingHistory = loadStoredTutorFeedbackHistory(exercise.id);
+  const nextHistory: Record<string, readonly CoachingHistoryEntry[]> = { ...existingHistory };
+
+  const targets =
+    options?.updatedEntries && options.updatedEntries.length > 0
+      ? options.updatedEntries
+      : options?.updatedStepId
+        ? [{ stepId: options.updatedStepId, draftSnapshot: options.draftSnapshot }]
+        : [];
+
+  for (const target of targets) {
+    const fb = byStepId[target.stepId];
+    if (!fb) continue;
+    const stepObj = exercise.steps.find(s => s.id === target.stepId);
+    const totalCriteria =
+      stepObj && stepObj.kind === 'written-reasoning'
+        ? stepObj.rubric.length
+        : fb.criterionFeedback.length;
+    const metCount = fb.criterionFeedback.filter(c => c.status === 'met').length;
+    const clippedSnapshot =
+      typeof target.draftSnapshot === 'string'
+        ? target.draftSnapshot.slice(0, 3_500)
+        : undefined;
+
+    const entry: CoachingHistoryEntry = {
+      receivedAt: fb.receivedAt,
+      source: fb.source,
+      ...(fb.verdict !== undefined ? { verdict: fb.verdict } : {}),
+      ...(fb.score !== undefined ? { score: fb.score } : {}),
+      ...(fb.maxScore !== undefined ? { maxScore: fb.maxScore } : {}),
+      metCount,
+      totalCriteria,
+      summary: fb.summary,
+      conventionWarnings: fb.conventionWarnings,
+      ...(clippedSnapshot !== undefined ? { draftSnapshot: clippedSnapshot } : {}),
+    };
+
+    const prevList = nextHistory[target.stepId] ?? [];
+    const last = prevList[prevList.length - 1];
+    if (last && last.receivedAt === entry.receivedAt && last.summary === entry.summary) {
+      continue;
+    }
+    nextHistory[target.stepId] = [...prevList, entry].slice(-MAX_HISTORY_ENTRIES);
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        tutorFeedbackStorageKey(exercise.id),
+        JSON.stringify({
+          version: 1,
+          byStepId,
+          ...(Object.keys(nextHistory).length > 0 ? { historyByStepId: nextHistory } : {}),
+        }),
+      );
+    } catch {
+      // Ignore storage quota / blocked localStorage errors gracefully
+    }
+  }
+
+  return nextHistory;
+}
+
+/**
+ * Safely scans all persisted WebMCP / Gemini coaching feedback records from `localStorage`
+ * for the Study Diagnostics & Mistake Ledger without throwing on corrupt entries.
+ */
+export function scanAllStoredTutorFeedbackRecords(): readonly {
+  readonly exerciseId: EntityId;
+  readonly byStepId: Readonly<Record<string, TutorCoachingFeedback>>;
+}[] {
+  if (typeof window === 'undefined') return [];
+  const records: {
+    readonly exerciseId: EntityId;
+    readonly byStepId: Readonly<Record<string, TutorCoachingFeedback>>;
+  }[] = [];
+
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key || !key.startsWith(TUTOR_FEEDBACK_STORAGE_PREFIX)) continue;
+      const exerciseId = key.slice(TUTOR_FEEDBACK_STORAGE_PREFIX.length);
+      if (!exerciseId) continue;
+      const raw = window.localStorage.getItem(key);
+      if (!raw || raw.length > MAX_RAW_CHARS) continue;
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.byStepId)) continue;
+        const byStepId: Record<string, TutorCoachingFeedback> = {};
+        for (const [stepId, val] of Object.entries(parsed.byStepId)) {
+          if (!isRecord(val)) continue;
+          const summary = sanitizeText(val.summary, MAX_SUMMARY_CHARS);
+          if (!summary) continue;
+          const verdict =
+            val.verdict === 'pass' || val.verdict === 'not-pass' ? val.verdict : undefined;
+          const score =
+            typeof val.score === 'number' && Number.isFinite(val.score) ? val.score : undefined;
+          const maxScore =
+            typeof val.maxScore === 'number' && Number.isFinite(val.maxScore)
+              ? val.maxScore
+              : undefined;
+          const criterionFeedback: TutorCriterionFeedback[] = [];
+          if (Array.isArray(val.criterionFeedback)) {
+            for (const item of val.criterionFeedback) {
+              if (!isRecord(item)) continue;
+              const cid = typeof item.criterionId === 'string' ? item.criterionId.trim() : '';
+              const status = typeof item.status === 'string' ? item.status.trim() : '';
+              const comment = sanitizeText(item.comment, MAX_ITEM_CHARS);
+              if (cid && VALID_STATUSES.has(status as TutorCriterionStatus) && comment) {
+                criterionFeedback.push({
+                  criterionId: cid,
+                  status: status as TutorCriterionStatus,
+                  comment,
+                });
+              }
+            }
+          }
+          byStepId[stepId] = {
+            version: 1,
+            exerciseId,
+            stepId,
+            source: val.source === 'webmcp' ? 'webmcp' : 'clipboard',
+            receivedAt:
+              typeof val.receivedAt === 'string' && val.receivedAt.length <= 40
+                ? val.receivedAt
+                : '',
+            summary,
+            ...(verdict !== undefined ? { verdict } : {}),
+            ...(score !== undefined ? { score } : {}),
+            ...(maxScore !== undefined ? { maxScore } : {}),
+            socraticQuestions: sanitizeStringList(val.socraticQuestions, 5, MAX_ITEM_CHARS),
+            criterionFeedback,
+            conventionWarnings: sanitizeStringList(val.conventionWarnings, 5, MAX_ITEM_CHARS),
+            citedSections: sanitizeStringList(val.citedSections, 6, 320),
+          };
+        }
+        if (Object.keys(byStepId).length > 0) {
+          records.push({ exerciseId, byStepId });
+        }
+      } catch {
+        // Skip corrupt storage entry
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return records;
 }

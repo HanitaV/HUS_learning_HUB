@@ -9,6 +9,25 @@ export interface ReasoningScaffoldTemplate {
   readonly template: string;
 }
 
+export type CourseStudyApproachKind =
+  | 'problem-drill'
+  | 'practical-coding'
+  | 'phenomena-modeling'
+  | 'data-interpretation';
+
+export interface CourseStudyMethodPillar {
+  readonly title: string;
+  readonly detail: string;
+}
+
+export interface CourseStudyGuide {
+  readonly approachKind: CourseStudyApproachKind;
+  readonly badgeLabel: string;
+  readonly headline: string;
+  readonly methodPillars: readonly CourseStudyMethodPillar[];
+  readonly commonPitfall: string;
+}
+
 export interface CourseConventionCanon {
   readonly courseId: EntityId;
   readonly academicCode: string;
@@ -17,6 +36,7 @@ export interface CourseConventionCanon {
   readonly notationRules: readonly string[];
   readonly forbiddenShortcutHints: readonly string[];
   readonly presentationCheckpoints?: readonly string[] | undefined;
+  readonly studyGuide?: CourseStudyGuide | undefined;
   readonly reasoningScaffolds: readonly ReasoningScaffoldTemplate[];
 }
 
@@ -106,6 +126,28 @@ export interface CurriculumSearchHit {
 
 export type CoachingPromptMode = 'socratic-hint' | 'rubric-review' | 'presentation-review';
 
+export interface CoachingHistoryEntry {
+  readonly receivedAt: string;
+  readonly source: 'webmcp' | 'clipboard';
+  readonly verdict?: TutorAssessmentVerdict | undefined;
+  readonly score?: number | undefined;
+  readonly maxScore?: number | undefined;
+  readonly metCount: number;
+  readonly totalCriteria: number;
+  readonly summary: string;
+  readonly conventionWarnings: readonly string[];
+  readonly draftSnapshot?: string | undefined;
+}
+
+export interface RevisionDiffContext {
+  readonly attemptNumber: number;
+  readonly previousVerdict?: TutorAssessmentVerdict | undefined;
+  readonly previousScore?: number | undefined;
+  readonly previousSummary: string;
+  readonly previousWarnings: readonly string[];
+  readonly draftChangeSummary: string;
+}
+
 export interface GroundedEssayContextPacket {
   readonly schemaVersion: 1;
   readonly generatedAt: string;
@@ -130,6 +172,7 @@ export interface GroundedEssayContextPacket {
     readonly given: readonly GivenQuantity[];
     readonly theoryAnchors: readonly TheoryAnchor[];
     readonly visualContextSummary?: readonly string[] | undefined;
+    readonly studentInteractiveWorkSummary?: readonly string[] | undefined;
   };
   readonly activeStep: {
     readonly id: EntityId;
@@ -144,6 +187,7 @@ export interface GroundedEssayContextPacket {
     readonly modelRevealed: boolean;
     /** Only populated when `modelRevealed === true` so unrevealed reference answers never leak. */
     readonly referenceModelAnswer?: string | undefined;
+    readonly revisionDiffContext?: RevisionDiffContext | undefined;
   };
   readonly groundedExcerpts: readonly {
     readonly citationLabel: string;

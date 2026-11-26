@@ -88,21 +88,28 @@ test('mobile navigation drawer opens, navigates, and closes cleanly', async ({ p
   await expect(dialog).not.toBeVisible();
 });
 
-test('small-screen popup requires confirmation on phones and does not show on desktop', async ({
+test('universal 3-bar curriculum drawer, brand crest, and mobile thumb navigation work seamlessly on template', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.setViewportSize({ width: 1280, height: 780 });
   await page.goto('./');
-  await page.evaluate(() => window.localStorage.removeItem('hus-learning-hub:small-screen-ack:v1'));
-  await page.reload();
-  await expect(
-    page.getByRole('dialog', { name: /tối ưu cho màn hình lớn/i }),
-  ).toHaveCount(0);
+  await expect(page.locator('[data-brand-crest="hus-observatory"]').first()).toBeVisible();
 
+  // Universal 3-bar drawer opens on desktop as well
+  await page.getByRole('button', { name: 'Mở thanh điều hướng' }).click();
+  const drawer = page.getByRole('dialog', { name: /Điều hướng/i });
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+
+  // Small phone viewport renders natively without any blocking small-screen modal and shows thumb-zone nav
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.reload();
-  const dialog = page.getByRole('dialog', { name: /tối ưu cho màn hình lớn/i });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: /Tôi đã hiểu/i }).click();
-  await expect(dialog).toBeHidden();
+  await page.goto('./');
+  await expect(page.getByRole('dialog', { name: /tối ưu cho màn hình lớn/i })).toHaveCount(0);
+  const mobileBottomNav = page.getByRole('navigation', {
+    name: 'Thanh điều hướng nhanh trên điện thoại',
+  });
+  await expect(mobileBottomNav).toBeVisible();
+  await mobileBottomNav.getByRole('link', { name: 'Tiến độ' }).click();
+  await expect(page.getByRole('heading', { name: 'Tiến độ học tập', exact: true })).toBeVisible();
 });

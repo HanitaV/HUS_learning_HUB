@@ -1,5 +1,6 @@
 ﻿import { useState } from 'react';
 import type {
+  CoachingHistoryEntry,
   CoachingPromptMode,
   GroundedEssayContextPacket,
   ReasoningScaffoldTemplate,
@@ -22,6 +23,7 @@ export interface WrittenReasoningStepViewProps {
   readonly scaffolds?: readonly ReasoningScaffoldTemplate[] | undefined;
   readonly webMcpAvailable?: boolean | undefined;
   readonly coachingFeedback?: TutorCoachingFeedback | undefined;
+  readonly coachingHistory?: readonly CoachingHistoryEntry[] | undefined;
   readonly getGroundedPacket?: ((mode: CoachingPromptMode) => GroundedEssayContextPacket) | undefined;
   readonly onImportFeedbackText?:
     | ((rawText: string) => { readonly ok: boolean; readonly error?: string | undefined })
@@ -38,6 +40,7 @@ export function WrittenReasoningStepView({
   scaffolds,
   webMcpAvailable = false,
   coachingFeedback,
+  coachingHistory,
   getGroundedPacket,
   onImportFeedbackText,
   onClearFeedback,
@@ -189,6 +192,7 @@ export function WrittenReasoningStepView({
           modelRevealed={draft.modelRevealed}
           webMcpAvailable={webMcpAvailable}
           coachingFeedback={coachingFeedback}
+          coachingHistory={coachingHistory}
           getGroundedPacket={getGroundedPacket}
           onImportFeedbackText={onImportFeedbackText}
           onClearFeedback={onClearFeedback}

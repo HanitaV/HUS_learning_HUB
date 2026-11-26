@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { useQuestProgress } from '../app/useQuestProgress';
+import { useWebMcpActivity } from '../app/useWebMcpActivity';
+import type { ExerciseDefinition } from '../domain/workspace';
 import {
   completedCourseLessonIds,
   courseEffectiveProgress,
@@ -9,9 +11,22 @@ import {
   subjectProgress,
 } from '../core/learning/progress';
 import { courseLessons } from '../core/learning/content';
+import {
+  buildExerciseMetadataLookup,
+  buildStudyDiagnosticsReport,
+  formatMistakeLedgerMarkdown,
+} from '../core/learning/study-diagnostics';
+import { downloadMarkdownBundle } from '../infrastructure/ai/notebooklm-exporter';
+import { scanAllStoredTutorFeedbackRecords } from '../infrastructure/ai/tutor-feedback-parser';
+import { registerStudyDiagnosticsWebMcpTools } from '../infrastructure/ai/webmcp-essay-bridge';
 import { courseRegistry, subjectList } from '../infrastructure/content/catalogue';
-import { learningContent } from '../infrastructure/content/learning';
+import { learningContent, loadAllLazyCourseExercises } from '../infrastructure/content/learning';
+import { writtenPractice } from '../infrastructure/content/written-practice';
 import { skillQuestList } from '../infrastructure/quests/registry';
+import {
+  exportFullStudyArchive,
+  importStudyArchiveOrProgress,
+} from '../infrastructure/progress/study-archive';
 import { progressStore } from '../infrastructure/progress/store';
 import { Badge } from '../components/ui/Badge';
 import { Breadcrumbs } from '../components/ui/Breadcrumbs';
@@ -28,15 +43,82 @@ import {
 } from '../components/ui/Icons';
 
 export default function ProgressPage() {
+  const navigate = useNavigate();
   const { progress, error } = useLearningProgress();
+  const webMcpActivity = useWebMcpActivity();
   const [message, setMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [lazyExercises, setLazyExercises] = useState<readonly ExerciseDefinition[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void loadAllLazyCourseExercises()
+      .then(loaded => {
+        if (active) setLazyExercises(loaded);
+      })
+      .catch(() => {
+        // Ignore lazy bank failures on diagnostic load
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const allCourses = useMemo(() => courseRegistry.list(), []);
+  const availableCourses = useMemo(
+    () => allCourses.filter(c => c.status === 'available'),
+    [allCourses],
+  );
+  const diagnosticsReport = useMemo(() => {
+    const combinedExercises: readonly ExerciseDefinition[] = [
+      ...writtenPractice,
+      ...lazyExercises,
+    ];
+    const lookup = buildExerciseMetadataLookup({
+      courses: allCourses,
+      content: learningContent,
+      exercises: combinedExercises,
+    });
+    const tutorRecords = scanAllStoredTutorFeedbackRecords();
+    return buildStudyDiagnosticsReport({
+      courses: availableCourses,
+      content: learningContent,
+      progress,
+      tutorRecords,
+      exerciseLookup: lookup,
+    });
+  }, [allCourses, availableCourses, lazyExercises, progress]);
+
+  const diagnosticsRef = useRef({
+    diagnosticsReport,
+    navigate,
+  });
+  diagnosticsRef.current = {
+    diagnosticsReport,
+    navigate,
+  };
+
+  useEffect(() => {
+    const registration = registerStudyDiagnosticsWebMcpTools({
+      getDiagnosticsReport: () => diagnosticsRef.current.diagnosticsReport,
+      onLaunchTargetedDrill: ({ courseId, pinnedExerciseIds }) => {
+        const pinnedParam = pinnedExerciseIds.join(',');
+        diagnosticsRef.current.navigate(
+          `/exams?course=${encodeURIComponent(courseId)}${
+            pinnedParam ? `&pinned=${encodeURIComponent(pinnedParam)}` : ''
+          }`,
+        );
+      },
+    });
+    return () => {
+      registration.dispose();
+    };
+  }, []);
 
   const { questProgress } = useQuestProgress();
   const completedQuests = skillQuestList.filter(q =>
     questProgress.completedQuestIds.includes(q.id),
   );
-  const availableCourses = courseRegistry.list().filter(c => c.status === 'available');
   const effectiveCompletedIds = effectiveCompletedLessonIds(
     availableCourses,
     learningContent,
@@ -61,6 +143,18 @@ export default function ProgressPage() {
     const link = document.createElement('a');
     link.href = url;
     link.download = 'hus-progress-v1.json';
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const exportArchiveV2 = () => {
+    const archive = exportFullStudyArchive(progress);
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'hus-study-archive-v2.json';
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -307,6 +401,160 @@ export default function ProgressPage() {
         )}
       </section>
 
+      {/* Personal Mistake & Convention Ledger + Study Diagnostics */}
+      <section
+        data-mistake-ledger="true"
+        aria-labelledby="mistake-ledger-heading"
+        className="hus-card-surface space-y-4 rounded-[var(--radius-xl)] border border-border bg-surface p-5 sm:p-7"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="mistake-ledger-heading" className="heading-section">
+                Sổ tay Lỗi sai &amp; Ký hiệu ĐHKHTN
+              </h2>
+              {webMcpActivity.labelVi ? (
+                <span data-webmcp-live-activity="true">
+                  <Badge tone="accent">{webMcpActivity.labelVi}</Badge>
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 max-w-prose text-sm text-ink-secondary">
+              Tổng hợp các lỗi ký hiệu, điều kiện biên và câu hỏi chưa vượt ngưỡng Mức 1 (≥ 7,0/10)
+              từ các phiên tự luận A4 để tạo đề luyện tập mục tiêu chỉ với 1 bấm.
+            </p>
+          </div>
+          {diagnosticsReport.totalCoachedSteps > 0 ? (
+            <button
+              type="button"
+              data-export-mistake-ledger-btn="true"
+              onClick={() => {
+                const md = formatMistakeLedgerMarkdown(diagnosticsReport);
+                downloadMarkdownBundle('hus-so-tay-loi-sai.md', md);
+              }}
+              className="hus-btn hus-btn-secondary shrink-0 text-xs"
+            >
+              <DownloadIcon width={14} height={14} />
+              <span>Xuất Sổ tay Lỗi sai (.md)</span>
+            </button>
+          ) : null}
+        </div>
+
+        {diagnosticsReport.totalCoachedSteps > 0 ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-[var(--radius-lg)] border border-border bg-canvas/70 px-4 py-3">
+                <p className="text-xs text-ink-muted">Ý tự luận đã chấm</p>
+                <p className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-ink">
+                  {diagnosticsReport.totalCoachedSteps}
+                </p>
+              </div>
+              <div className="rounded-[var(--radius-lg)] border border-border bg-canvas/70 px-4 py-3">
+                <p className="text-xs text-ink-muted">Cảnh báo ký hiệu lặp lại</p>
+                <p className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-ink">
+                  {diagnosticsReport.topConventionWarnings.length}
+                </p>
+              </div>
+              <div className="rounded-[var(--radius-lg)] border border-border bg-canvas/70 px-4 py-3">
+                <p className="text-xs text-ink-muted">Câu cần ôn &amp; viết lại</p>
+                <p className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-ink">
+                  {diagnosticsReport.mistakeEntries.length}
+                </p>
+              </div>
+            </div>
+
+            {diagnosticsReport.courseSummaries.some(
+              c => (diagnosticsReport.weakExerciseIdsByCourse[c.courseId]?.length ?? 0) > 0,
+            ) ? (
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Luyện riêng câu chưa đạt theo học phần
+                </h3>
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                  {diagnosticsReport.courseSummaries
+                    .filter(
+                      c => (diagnosticsReport.weakExerciseIdsByCourse[c.courseId]?.length ?? 0) > 0,
+                    )
+                    .map(summary => {
+                      const weakIds =
+                        diagnosticsReport.weakExerciseIdsByCourse[summary.courseId] ?? [];
+                      return (
+                        <div
+                          key={summary.courseId}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-warning/35 bg-warning-subtle/40 px-3.5 py-2.5 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-ink">
+                              {summary.courseCode} · {summary.courseTitle}
+                            </p>
+                            <p className="text-ink-secondary">
+                              {summary.averageScoreOn10 !== null
+                                ? `Điểm TB Mức 1: ${summary.averageScoreOn10.toFixed(1)}/10 · `
+                                : ''}
+                              {weakIds.length} câu cần luyện lại
+                            </p>
+                          </div>
+                          <Link
+                            to={`/exams?course=${encodeURIComponent(summary.courseId)}&pinned=${encodeURIComponent(weakIds.join(','))}`}
+                            data-targeted-drill-link={summary.courseId}
+                            className="hus-btn hus-btn-primary shrink-0 px-3 py-1 text-xs"
+                          >
+                            Luyện riêng {weakIds.length} câu chưa đạt
+                          </Link>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            ) : null}
+
+            {diagnosticsReport.topConventionWarnings.length > 0 ? (
+              <div className="space-y-1.5 rounded-[var(--radius-md)] border border-warning/35 bg-canvas/75 px-3.5 py-3 text-xs">
+                <p className="font-semibold text-ink">Lỗi ký hiệu &amp; lập luận hay gặp:</p>
+                <ul className="list-disc space-y-1 pl-4 text-ink-secondary">
+                  {diagnosticsReport.topConventionWarnings.slice(0, 5).map((warn, idx) => (
+                    <li key={idx}>
+                      <span className="font-medium text-ink">{warn.warning}</span>{' '}
+                      <span className="font-mono text-[11px] text-ink-muted">
+                        ({warn.count} lần · {warn.courseCodes.join(', ')})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {diagnosticsReport.mistakeEntries.length > 0 ? (
+              <ul className="space-y-2 text-xs">
+                {diagnosticsReport.mistakeEntries.slice(0, 5).map(item => (
+                  <li
+                    key={`${item.exerciseId}:${item.stepId}`}
+                    className="rounded-[var(--radius-md)] border border-border bg-canvas/65 px-3.5 py-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-ink">
+                        [{item.courseCode}] {item.exerciseTitle}
+                      </span>
+                      <Badge tone={item.verdict === 'not-pass' ? 'danger' : 'warning'} mono>
+                        {item.score !== undefined
+                          ? `${item.score.toFixed(1)}/${item.maxScore ?? 10}`
+                          : 'Cần củng cố'}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-ink-secondary">{item.summary}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-ink-muted">
+            Chưa có nhận xét WebMCP / Gemini nào được lưu trên trình duyệt. Hãy hoàn thành và chấm
+            một bài tự luận giấy A4 để Sổ tay tự động ghi nhận lỗi sai cần lưu ý.
+          </p>
+        )}
+      </section>
+
       {/* Backup & Restore */}
       <section className="hus-card-surface space-y-4 rounded-[var(--radius-xl)] border border-border bg-surface p-5 sm:p-7">
         <div>
@@ -319,14 +567,25 @@ export default function ProgressPage() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-          <button
-            type="button"
-            onClick={exportBackup}
-            className="hus-btn hus-btn-secondary shrink-0"
-          >
-            <DownloadIcon width={15} height={15} />
-            Xuất bản sao lưu JSON
-          </button>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={exportBackup}
+              className="hus-btn hus-btn-secondary shrink-0"
+            >
+              <DownloadIcon width={15} height={15} />
+              Xuất bản sao lưu JSON
+            </button>
+            <button
+              type="button"
+              data-export-archive-v2-btn="true"
+              onClick={exportArchiveV2}
+              className="hus-btn hus-btn-secondary shrink-0"
+            >
+              <DownloadIcon width={15} height={15} />
+              Xuất gói học tập đầy đủ (v2)
+            </button>
+          </div>
 
           <label className="flex min-h-[44px] flex-1 cursor-pointer flex-col justify-center rounded-[var(--radius-md)] border border-dashed border-border-strong bg-canvas px-4 py-3 text-sm transition-colors duration-200 hover:border-accent">
             <span className="inline-flex items-center gap-2 font-medium text-ink">
@@ -345,8 +604,14 @@ export default function ProgressPage() {
                 setMessage(null);
                 try {
                   if (file.size > 5_000_000) throw new Error('Tệp vượt quá 5 MB.');
-                  progressStore.restore(await file.text());
-                  setMessage('Đã khôi phục dữ liệu vào phiên hiện tại.');
+                  const result = importStudyArchiveOrProgress(await file.text(), json =>
+                    progressStore.restore(json),
+                  );
+                  setMessage(
+                    result.version === 2
+                      ? `Đã khôi phục gói học tập đầy đủ (v2) kèm ${result.restoredEntries} bản ghi nháp & nhận xét.`
+                      : 'Đã khôi phục dữ liệu tiến độ (v1) vào phiên hiện tại.',
+                  );
                 } catch (e) {
                   setImportError(e instanceof Error ? e.message : 'Không thể đọc tệp.');
                 }

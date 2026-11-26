@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useWebMcpActivity } from '../../app/useWebMcpActivity';
 import { useWebMcpGuide } from '../../app/WebMcpGuideContext';
 import { formatScoreVi } from '../../core/learning/webmcp-essay-adapters';
 import { WEBMCP_ORIGIN_TRIAL_INFO } from '../../infrastructure/ai/webmcp-essay-bridge';
@@ -64,6 +65,7 @@ export function ExamWebMcpStatusBar({
   onExitWeakQuestionDrill,
 }: ExamWebMcpStatusBarProps) {
   const { openGuide } = useWebMcpGuide();
+  const webMcpActivity = useWebMcpActivity();
   const [copiedFlag, setCopiedFlag] = useState(false);
   const [batchImportOpen, setBatchImportOpen] = useState(false);
   const [batchRawText, setBatchRawText] = useState('');
@@ -128,6 +130,11 @@ export function ExamWebMcpStatusBar({
             <span className="font-mono text-[11px] tabular-nums text-ink-muted">
               ({draftedStepCount}/{totalWrittenSteps} tờ A4 đã viết)
             </span>
+            {webMcpActivity.labelVi ? (
+              <span data-webmcp-live-activity="true">
+                <Badge tone="accent">{webMcpActivity.labelVi}</Badge>
+              </span>
+            ) : null}
             {paperScoreOn10 !== null && paperScoreOn10 !== undefined ? (
               <span data-exam-live-score="true">
                 <Badge tone={paperPassed ? 'success' : 'warning'} mono>
@@ -203,7 +210,9 @@ export function ExamWebMcpStatusBar({
             ) : (
               <CopyIcon width={13} height={13} />
             )}
-            <span>Nhờ WebMCP kiểm tra toàn đề</span>
+            <span>
+              {webMcpAvailable ? 'Nhờ WebMCP kiểm tra toàn đề' : 'Chấm toàn đề với Gemini'}
+            </span>
           </button>
 
           {onImportWholePaperText ? (

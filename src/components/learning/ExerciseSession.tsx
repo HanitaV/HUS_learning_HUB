@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CodeLanguage } from '../../domain/code-lab';
 import type {
+  CoachingHistoryEntry,
   CoachingPromptMode,
   CourseConventionCanon,
   GroundedEssayContextPacket,
@@ -18,6 +19,11 @@ import {
   syncCriteriaFromCoachingFeedback,
 } from '../../core/learning/webmcp-essay-adapters';
 import { parseExternalTutorFeedback } from '../../infrastructure/ai/tutor-feedback-parser';
+import {
+  isPlainObject,
+  isStringArray,
+  useInteractiveStepDraft,
+} from '../../infrastructure/practice/interactive-step-drafts';
 import { progressStore } from '../../infrastructure/progress/store';
 import { useLearningProgress } from '../../app/useLearningProgress';
 import { Badge } from '../ui/Badge';
@@ -38,6 +44,7 @@ export interface InlineLessonA4Bridge {
   readonly webMcpAvailable: boolean;
   readonly activeStepId: string;
   readonly coachingByStepId: Readonly<Record<string, TutorCoachingFeedback>>;
+  readonly coachingHistoryByStepId?: Readonly<Record<string, readonly CoachingHistoryEntry[]>> | undefined;
   readonly coachedSnapshotByStepId?: Readonly<Record<string, string>> | undefined;
   readonly onActivateExerciseStep: (
     exercise: SemiEssayExercise,
@@ -66,6 +73,21 @@ export interface InlineLessonA4Bridge {
   readonly onClearFeedback: (exercise: SemiEssayExercise, stepId: string) => void;
 }
 
+interface InlineA4DraftState {
+  readonly draft: string;
+  readonly checkedRubricIds: readonly string[];
+}
+
+function validateInlineA4Draft(raw: unknown): InlineA4DraftState | null {
+  if (!isPlainObject(raw)) return null;
+  if (typeof raw.draft !== 'string' || raw.draft.length > 20_000) return null;
+  if (!isStringArray(raw.checkedRubricIds, 30)) return null;
+  return {
+    draft: raw.draft,
+    checkedRubricIds: raw.checkedRubricIds,
+  };
+}
+
 export default function ExerciseSession({
   exercise,
   symbolContext,
@@ -88,8 +110,17 @@ export default function ExerciseSession({
   const { progress } = useLearningProgress();
   const [correct, setCorrect] = useState<boolean | null>(null);
   const [solveMode, setSolveMode] = useState<'quick' | 'written-a4'>('quick');
-  const [a4Draft, setA4Draft] = useState('');
-  const [checkedRubricIds, setCheckedRubricIds] = useState<readonly string[]>([]);
+  const [inlineA4State, setInlineA4State] = useInteractiveStepDraft<InlineA4DraftState>(
+    exercise.kind === 'semi-essay' ? undefined : `lesson-inline-a4:${exercise.id}`,
+    () => ({ draft: '', checkedRubricIds: [] }),
+    validateInlineA4Draft,
+  );
+  const a4Draft = inlineA4State.draft;
+  const checkedRubricIds = inlineA4State.checkedRubricIds;
+  const setA4Draft = (next: string) =>
+    setInlineA4State(prev => (prev.draft === next ? prev : { ...prev, draft: next }));
+  const setCheckedRubricIds = (next: readonly string[]) =>
+    setInlineA4State(prev => ({ ...prev, checkedRubricIds: next }));
   const [coachedSnapshot, setCoachedSnapshot] = useState<string | undefined>(undefined);
   const [showReference, setShowReference] = useState(false);
 
@@ -103,6 +134,16 @@ export default function ExerciseSession({
     return adaptClassicExerciseToSemiEssay(exercise, { canon: inlineA4Bridge?.canon });
   }, [exercise, inlineA4Bridge?.canon]);
 
+  const writtenStep =
+    adaptedEssay?.steps[0]?.kind === 'written-reasoning' ? adaptedEssay.steps[0] : null;
+  const syncDraftRef = useRef(inlineA4Bridge?.onSyncDraftText);
+  syncDraftRef.current = inlineA4Bridge?.onSyncDraftText;
+
+  useEffect(() => {
+    if (!writtenStep || !a4Draft) return;
+    syncDraftRef.current?.(writtenStep.id, a4Draft);
+  }, [writtenStep?.id, a4Draft]);
+
   if (exercise.kind === 'semi-essay') {
     return null;
   }
@@ -112,8 +153,6 @@ export default function ExerciseSession({
   const attemptSummary =
     pastAttempts.length > 0 ? `Đã thử ${pastAttempts.length} lần` : undefined;
 
-  const writtenStep =
-    adaptedEssay?.steps[0]?.kind === 'written-reasoning' ? adaptedEssay.steps[0] : null;
   const stepCoaching = writtenStep ? inlineA4Bridge?.coachingByStepId[writtenStep.id] : undefined;
   const effectiveCoachedSnapshot =
     (writtenStep ? inlineA4Bridge?.coachedSnapshotByStepId?.[writtenStep.id] : undefined) ??
@@ -236,6 +275,7 @@ export default function ExerciseSession({
             inlineA4Bridge.onActivateExerciseStep(adaptedEssay, writtenStep, a4Draft)
           }
           coachingFeedback={stepCoaching}
+          coachingHistory={inlineA4Bridge.coachingHistoryByStepId?.[writtenStep.id]}
           getGroundedPacket={mode =>
             inlineA4Bridge.onBuildPacket(adaptedEssay, writtenStep, a4Draft, checkedRubricIds, mode)
           }

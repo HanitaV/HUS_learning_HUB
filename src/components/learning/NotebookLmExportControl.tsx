@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { EntityId } from '../../domain/learning';
+import type { NotebookLmExportMode } from '../../infrastructure/ai/notebooklm-exporter';
 import { CheckIcon, CopyIcon, DownloadIcon } from '../ui/Icons';
 
 export interface NotebookLmExportControlProps {
@@ -10,6 +11,28 @@ export interface NotebookLmExportControlProps {
   readonly variant?: 'card' | 'compact' | undefined;
 }
 
+const BUNDLE_MODE_OPTIONS: readonly {
+  readonly id: NotebookLmExportMode;
+  readonly label: string;
+  readonly description: string;
+}[] = [
+  {
+    id: 'syllabus',
+    label: 'Giáo trình',
+    description: 'Bài giảng, sơ đồ tiên quyết & quy ước ĐHKHTN',
+  },
+  {
+    id: 'study-pack',
+    label: 'Ôn thi + Rubric',
+    description: 'Giáo trình kèm ngân hàng đề & tiêu chí chấm A4',
+  },
+  {
+    id: 'mistake-ledger',
+    label: 'Sổ lỗi sai',
+    description: 'Tổng hợp lỗi sai & nhắc ký hiệu cá nhân của bạn',
+  },
+];
+
 export function NotebookLmExportControl({
   courseId,
   courseCode,
@@ -17,6 +40,7 @@ export function NotebookLmExportControl({
   chapterLabel,
   variant = 'card',
 }: NotebookLmExportControlProps) {
+  const [bundleMode, setBundleMode] = useState<NotebookLmExportMode>('syllabus');
   const [status, setStatus] = useState<'idle' | 'loading' | 'downloaded' | 'copied' | 'error'>(
     'idle',
   );
@@ -31,6 +55,7 @@ export function NotebookLmExportControl({
       );
       const bundle = await generateCourseNotebookBundle(courseId, {
         filterChapterId,
+        mode: variant === 'compact' ? 'syllabus' : bundleMode,
       });
       if (mode === 'download') {
         downloadMarkdownBundle(bundle.filename, bundle.markdown);
@@ -100,6 +125,28 @@ export function NotebookLmExportControl({
           <strong className="font-medium text-ink">Google NotebookLM (@Gemini Notebook)</strong>{' '}
           hoặc <strong className="font-medium text-ink">Gemini Gems</strong>.
         </p>
+      </div>
+
+      <div role="group" aria-label="Chế độ gói NotebookLM" className="grid grid-cols-3 gap-1.5">
+        {BUNDLE_MODE_OPTIONS.map(opt => {
+          const active = bundleMode === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              aria-pressed={active}
+              title={opt.description}
+              onClick={() => setBundleMode(opt.id)}
+              className={`min-h-[34px] rounded-[var(--radius-md)] border px-2 py-1 text-xs font-medium transition-colors ${
+                active
+                  ? 'border-accent bg-accent-subtle text-accent-ink font-semibold'
+                  : 'border-border bg-canvas text-ink-secondary hover:text-ink'
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap gap-2">

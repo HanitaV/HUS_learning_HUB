@@ -169,7 +169,7 @@ export function WebMcpOnboardingModal({ open, onClose }: WebMcpOnboardingModalPr
             <p id={descId} className="text-xs leading-relaxed text-ink-secondary sm:text-sm">
               Website đã tích hợp sẵn <strong>Origin Trial Token cho WebMCP</strong> trên{' '}
               <code className="font-mono text-[11px] text-ink">
-                {WEBMCP_ORIGIN_TRIAL_INFO.hostname}
+                {WEBMCP_ORIGIN_TRIAL_INFO.hostnames.join(', ')}
               </code>{' '}
               (hỗ trợ đến <strong>Chrome {WEBMCP_ORIGIN_TRIAL_INFO.maxChromeMilestone}</strong>, kết
               thúc khi phát hành bản Chrome kế tiếp, muộn nhất{' '}
@@ -319,22 +319,39 @@ export function WebMcpOnboardingModal({ open, onClose }: WebMcpOnboardingModalPr
               <p className="text-xs leading-relaxed text-ink-secondary">
                 <strong className="text-ink">WebMCP</strong> là chuẩn cầu nối cục bộ ngay trong tab
                 trình duyệt (<code className="font-mono text-[11px]">document.modelContext</code>),
-                cho phép trang tĩnh giao tiếp 2 chiều an toàn với Gemini mà không tốn máy chủ:
+                cho phép trang tĩnh giao tiếp 2 chiều an toàn với Gemini qua 10 công cụ &amp; 2 biểu
+                mẫu khai báo (Declarative Forms) mà không tốn máy chủ hay API key:
               </p>
               <ul className="list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-ink-secondary">
                 <li>
-                  <code className="font-mono text-[11px] text-ink">hus_get_essay_context</code>: Đọc
-                  đề bài, tiêu chí rubric, quy ước ký hiệu học phần và bản nháp mới nhất.
+                  <strong className="text-ink">Tự luận &amp; Giáo trình (6 tool):</strong>{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_get_essay_context</code>,{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_get_lesson_context</code>,{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_search_curriculum</code>,{' '}
+                  <code className="font-mono text-[11px] text-ink">
+                    hus_get_exam_paper_submissions
+                  </code>
+                  ,{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_submit_essay_coaching</code>{' '}
+                  &amp;{' '}
+                  <code className="font-mono text-[11px] text-ink">
+                    hus_submit_exam_batch_coaching
+                  </code>{' '}
+                  (có rào chắn chống vượt chương và đồng bộ dữ kiện biểu đồ tương tác).
                 </li>
                 <li>
-                  <code className="font-mono text-[11px] text-ink">hus_search_curriculum</code>: Tra
-                  cứu Graph-RAG + BM25 trên giáo trình ĐHKHTN kèm{' '}
-                  <strong className="text-ink">rào chắn chống vượt chương</strong> (chặn dùng định
-                  lý ở chương chưa học).
+                  <strong className="text-ink">CodeLab Socratic (2 tool):</strong>{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_get_codelab_context</code> &amp;{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_submit_code_coaching</code>{' '}
+                  đọc mã nguồn/stderr (ẩn test bí mật) và trả gợi ý gỡ lỗi + đánh giá độ phức tạp.
                 </li>
                 <li>
-                  <code className="font-mono text-[11px] text-ink">hus_submit_essay_coaching</code>:
-                  Kiểm duyệt JSON nghiêm ngặt và hiển thị thẻ nhận xét KaTeX ngay trên giao diện.
+                  <strong className="text-ink">Chẩn đoán &amp; Biểu mẫu (2 tool + 2 Form):</strong>{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_get_study_diagnostics</code>{' '}
+                  &amp;{' '}
+                  <code className="font-mono text-[11px] text-ink">hus_launch_targeted_drill</code>{' '}
+                  tổng hợp sổ tay lỗi sai để tạo đề luyện riêng, cùng 2 form tự động hóa (lọc môn học
+                  &amp; cấu hình đề thi).
                 </li>
               </ul>
             </section>
@@ -404,7 +421,9 @@ export function WebMcpOnboardingModal({ open, onClose }: WebMcpOnboardingModalPr
           <p className="text-[11px] leading-relaxed text-ink-muted">
             Có thể mở lại hướng dẫn này bất cứ lúc nào tại mục{' '}
             <strong className="text-ink-secondary">Cài đặt</strong> hoặc trong khung{' '}
-            <strong className="text-ink-secondary">Trợ giảng Socratic</strong>.
+            <strong className="text-ink-secondary">Trợ giảng Socratic</strong>,{' '}
+            <strong className="text-ink-secondary">Gỡ lỗi CodeLab (không viết hộ bài)</strong> và{' '}
+            <strong className="text-ink-secondary">Chẩn đoán lỗi sai ĐHKHTN</strong> (hoàn toàn không yêu cầu API key).
           </p>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             <button

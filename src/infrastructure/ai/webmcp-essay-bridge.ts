@@ -1,4 +1,9 @@
 import type {
+  CodeLabCoachingFeedback,
+  CodeLabWebMcpContextPacket,
+  CodeLanguage,
+} from '../../domain/code-lab';
+import type {
   CoachingPromptMode,
   CurriculumSearchHit,
   GroundedEssayContextPacket,
@@ -7,6 +12,8 @@ import type {
 } from '../../domain/curriculum-tutor';
 import type { EntityId } from '../../domain/learning';
 import type { SemiEssayExercise } from '../../domain/semi-essay';
+import type { StudyDiagnosticsReport } from '../../core/learning/study-diagnostics';
+import { parseExternalCodeLabFeedback } from '../../core/code-lab/webmcp-coach';
 import { convertStudentShorthandToLatex } from '../../core/learning/realtime-math-preview';
 import { parseExternalTutorFeedback } from './tutor-feedback-parser';
 
@@ -33,11 +40,15 @@ export interface WebMcpModelContextPort {
     options?: { readonly signal?: AbortSignal | undefined },
   ) => void | Promise<void>;
   unregisterTool?: ((name: string) => void | Promise<void>) | undefined;
+  addEventListener?: ((type: string, listener: EventListener) => void) | undefined;
+  removeEventListener?: ((type: string, listener: EventListener) => void) | undefined;
 }
 
 export const WEBMCP_ORIGIN_TRIAL_INFO = {
   origin: 'https://your-domain.example',
+  origins: ['https://your-domain.example'],
   hostname: 'your-domain.example',
+  hostnames: ['your-domain.example'],
   maxChromeMilestone: 162,
   expiryDateIso: '2027-03-30',
   expiryDisplayVi: '30/03/2027',
@@ -79,9 +90,9 @@ function inspectOriginTrialEnvironment(): {
       ? document.querySelector('meta[http-equiv="origin-trial"][content]') !== null
       : false;
   const host = window.location?.hostname ?? '';
-  const isTrialOriginMatch =
-    host === WEBMCP_ORIGIN_TRIAL_INFO.hostname ||
-    host.endsWith(`.${WEBMCP_ORIGIN_TRIAL_INFO.hostname}`);
+  const isTrialOriginMatch = WEBMCP_ORIGIN_TRIAL_INFO.hostnames.some(
+    (trialHost) => host === trialHost || host.endsWith(`.${trialHost}`),
+  );
   return {
     hasOriginTrialToken,
     isTrialOriginMatch,
@@ -94,7 +105,7 @@ export function describeInactiveWebMcpReason(support: WebMcpSupportInfo): string
     return 'WebMCP đã hoạt động sẵn sàng trên trình duyệt này.';
   }
   if (!support.isTrialOriginMatch) {
-    return `Trang hiện mở ngoài tên miền đăng ký Origin Trial (${WEBMCP_ORIGIN_TRIAL_INFO.hostname}), nên WebMCP không tự bật mặc định và cần kích hoạt cờ thủ công.`;
+    return `Trang hiện mở ngoài tên miền đăng ký Origin Trial (${WEBMCP_ORIGIN_TRIAL_INFO.hostnames.join(', ')}), nên WebMCP không tự bật mặc định và cần kích hoạt cờ thủ công.`;
   }
   if (
     support.detectedChromeMajor !== null &&
@@ -155,7 +166,7 @@ export function formatWholeExamWebMcpPrompt(
   const dualPathHeader = options?.webMcpAvailable
     ? [
         '## 0. Chế độ kết nối tự thích ứng (WebMCP / ✨ Ask Gemini trên Chrome)',
-        `- **Nếu môi trường của bạn gọi được công cụ WebMCP:** Hãy gọi \`hus_get_exam_paper_submissions\` với \`{ "onlyDrafted": true }\` (kèm \`hus_search_curriculum\` khi cần) và gọi \`hus_submit_essay_coaching\` cho từng \`stepId\` để đẩy nhận xét trực tiếp lên từng tờ giấy A4.`,
+        `- **Nếu môi trường của bạn gọi được công cụ WebMCP:** Hãy gọi \`hus_get_exam_paper_submissions\` với \`{ "onlyDrafted": true }\` (kèm \`hus_search_curriculum\` khi cần) rồi ưu tiên gọi **1 lần duy nhất** công cụ \`hus_submit_exam_batch_coaching\` với \`{ "items": [...] }\` để đẩy toàn bộ điểm và nhận xét lên các tờ giấy A4 (hoặc gọi \`hus_submit_essay_coaching\` cho từng \`stepId\` nếu cần).`,
         '- **Nếu bạn đang chạy trên thanh bên ✨ Ask Gemini tiêu chuẩn (không có quyền gọi công cụ WebMCP):** **TUYỆT ĐỐI KHÔNG nhắc đến WebMCP và KHÔNG thông báo thiếu quyền gọi công cụ.** Hãy chấm cách trình bày trực tiếp cho toàn bộ các câu đã đính kèm bên dưới và **xuất đúng 1 khối ```json ... ``` tổng hợp ở cuối câu trả lời** để sinh viên đồng bộ 1-click về toàn bộ đề thi.',
         '',
       ]
@@ -167,6 +178,18 @@ export function formatWholeExamWebMcpPrompt(
     return [
       `### Câu ${step.questionNumber} (\`exerciseId: "${step.exerciseId}"\`, \`stepId: "${step.stepId}"\`) — ${step.exerciseTitle}`,
       `- **Đề bài:** ${step.problemPrompt}`,
+      ...(step.visualContextSummary && step.visualContextSummary.length > 0
+        ? [
+            '- **Dữ kiện hình vẽ / đồ thị đi kèm:**',
+            ...step.visualContextSummary.map(line => `  - ${line}`),
+          ]
+        : []),
+      ...(step.studentInteractiveWorkSummary && step.studentInteractiveWorkSummary.length > 0
+        ? [
+            '- **Bài làm tương tác ở các bước trước (dùng để kiểm tra chéo):**',
+            ...step.studentInteractiveWorkSummary.map(line => `  - ${line}`),
+          ]
+        : []),
       `- **Tiêu chí trình bày & rubric:**\n${criteria}`,
       `- **Bài trình bày trên giấy A4 của sinh viên (đã biên dịch sang chuẩn LaTeX):**`,
       '```markdown',
@@ -234,6 +257,8 @@ export interface ExamPaperSubmissionStepOverview {
   readonly rubricCriteria: readonly { readonly id: string; readonly prompt: string }[];
   readonly studentDraft: string;
   readonly hasDraft: boolean;
+  readonly visualContextSummary?: readonly string[] | undefined;
+  readonly studentInteractiveWorkSummary?: readonly string[] | undefined;
   readonly referenceModelAnswer?: string | undefined;
 }
 
@@ -305,17 +330,383 @@ export interface EssayWebMcpBindings {
     includeAllCourseLessons: boolean,
   ) => Promise<readonly CurriculumSearchHit[]>;
   readonly onReceiveFeedback: (feedback: TutorCoachingFeedback) => void;
+  readonly onReceiveBatchFeedback?: ((items: readonly TutorCoachingFeedback[]) => void) | undefined;
   readonly getExamPaperOverview?: (() => ExamPaperWebMcpOverview | null) | undefined;
   readonly getLessonContextPacket?: (() => LessonWebMcpContextPacket | null) | undefined;
 }
 
-const REGISTERED_TOOL_NAMES = [
+export const REGISTERED_ESSAY_TOOL_NAMES = [
   'hus_get_essay_context',
   'hus_search_curriculum',
   'hus_submit_essay_coaching',
   'hus_get_exam_paper_submissions',
+  'hus_submit_exam_batch_coaching',
   'hus_get_lesson_context',
 ] as const;
+
+export const REGISTERED_CODELAB_TOOL_NAMES = [
+  'hus_get_codelab_context',
+  'hus_submit_code_coaching',
+] as const;
+
+export const REGISTERED_DIAGNOSTICS_TOOL_NAMES = [
+  'hus_get_study_diagnostics',
+  'hus_launch_targeted_drill',
+] as const;
+
+export const REGISTERED_TOOL_NAMES = [
+  ...REGISTERED_ESSAY_TOOL_NAMES,
+  ...REGISTERED_CODELAB_TOOL_NAMES,
+  ...REGISTERED_DIAGNOSTICS_TOOL_NAMES,
+] as const;
+
+const TOOL_ACTIVITY_LABEL_VI: Readonly<Record<string, string>> = {
+  hus_get_essay_context: 'Gemini đang đọc bài nháp A4…',
+  hus_search_curriculum: 'Gemini đang tra cứu giáo trình ĐHKHTN…',
+  hus_submit_essay_coaching: 'Gemini đang đồng bộ nhận xét lên giấy A4…',
+  hus_get_exam_paper_submissions: 'Gemini đang đọc toàn bộ đề thi…',
+  hus_submit_exam_batch_coaching: 'Gemini đang chấm hàng loạt toàn đề…',
+  hus_get_lesson_context: 'Gemini đang đọc ngữ cảnh bài học…',
+  hus_get_codelab_context: 'Gemini đang đọc mã nguồn & stderr CodeLab…',
+  hus_submit_code_coaching: 'Gemini đang đẩy gợi ý debug Socratic…',
+  hus_get_study_diagnostics: 'Gemini đang phân tích Sổ tay Lỗi sai…',
+  hus_launch_targeted_drill: 'Gemini đang mở đề luyện riêng câu yếu…',
+};
+
+export interface WebMcpActivitySnapshot {
+  readonly activeToolName: string | null;
+  readonly labelVi: string | null;
+  readonly lastToolName: string | null;
+  readonly lastCompletedAt: number | null;
+  readonly invocationCount: number;
+}
+
+let activitySnapshot: WebMcpActivitySnapshot = {
+  activeToolName: null,
+  labelVi: null,
+  lastToolName: null,
+  lastCompletedAt: null,
+  invocationCount: 0,
+};
+
+const activityListeners = new Set<() => void>();
+
+function emitActivitySnapshot(next: WebMcpActivitySnapshot): void {
+  activitySnapshot = next;
+  for (const listener of activityListeners) {
+    listener();
+  }
+}
+
+function markToolActivityStart(toolName: string): void {
+  emitActivitySnapshot({
+    ...activitySnapshot,
+    activeToolName: toolName,
+    labelVi: TOOL_ACTIVITY_LABEL_VI[toolName] ?? `Đang chạy ${toolName}…`,
+  });
+}
+
+function markToolActivityEnd(toolName: string, countInvocation: boolean): void {
+  emitActivitySnapshot({
+    activeToolName: activitySnapshot.activeToolName === toolName ? null : activitySnapshot.activeToolName,
+    labelVi:
+      activitySnapshot.activeToolName === toolName
+        ? null
+        : activitySnapshot.labelVi,
+    lastToolName: toolName,
+    lastCompletedAt: Date.now(),
+    invocationCount: activitySnapshot.invocationCount + (countInvocation ? 1 : 0),
+  });
+}
+
+export function getWebMcpActivitySnapshot(): WebMcpActivitySnapshot {
+  return activitySnapshot;
+}
+
+export function subscribeWebMcpActivity(listener: () => void): () => void {
+  activityListeners.add(listener);
+  return () => {
+    activityListeners.delete(listener);
+  };
+}
+
+interface ActiveOwnerRecord {
+  readonly id: symbol;
+  readonly tools: readonly WebMcpToolDefinition[];
+  controller: AbortController | null;
+  active: boolean;
+}
+
+const portOwnerStacks = new WeakMap<WebMcpModelContextPort, ActiveOwnerRecord[]>();
+const observedPorts = new WeakSet<WebMcpModelContextPort>();
+
+function ensurePortLifecycleListeners(port: WebMcpModelContextPort): void {
+  if (observedPorts.has(port) || typeof port.addEventListener !== 'function') return;
+  observedPorts.add(port);
+  try {
+    port.addEventListener('toolactivated', event => {
+      const maybeEvent = event as unknown as { toolName?: unknown };
+      const toolName =
+        typeof maybeEvent.toolName === 'string' ? maybeEvent.toolName : 'webmcp-tool';
+      markToolActivityStart(toolName);
+    });
+    port.addEventListener('toolcancel', event => {
+      const maybeEvent = event as unknown as { toolName?: unknown };
+      const toolName =
+        typeof maybeEvent.toolName === 'string'
+          ? maybeEvent.toolName
+          : (activitySnapshot.activeToolName ?? 'webmcp-tool');
+      markToolActivityEnd(toolName, false);
+    });
+  } catch {
+    // Ignore hosts without EventTarget support on modelContext
+  }
+}
+
+export function getActiveRegisteredToolNames(): readonly string[] {
+  const { port } = getBrowserModelContext();
+  if (!port) return [];
+  const stack = portOwnerStacks.get(port);
+  const top = stack?.[stack.length - 1];
+  if (!top || !top.active) return [];
+  return top.tools.map(t => t.name);
+}
+
+export interface WebMcpDiagnosticsDryRunResult {
+  readonly ok: boolean;
+  readonly timestamp: string;
+  readonly isSecureContext: boolean;
+  readonly support: WebMcpSupportInfo;
+  readonly activeToolNames: readonly string[];
+  readonly checks: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly passed: boolean;
+    readonly detail: string;
+  }[];
+}
+
+/**
+ * Runs a safe, non-mutating WebMCP environment & registry self-test for `SettingsPage`.
+ */
+export function runWebMcpDiagnosticsDryRun(): WebMcpDiagnosticsDryRunResult {
+  const isSecure = typeof window !== 'undefined' ? Boolean(window.isSecureContext) : false;
+  const { port, info } = getBrowserModelContext();
+  const activeToolNames = getActiveRegisteredToolNames();
+  const hasNativeEvents = Boolean(port && typeof port.addEventListener === 'function');
+
+  const checks = [
+    {
+      id: 'secure-context',
+      label: 'Ngữ cảnh bảo mật (HTTPS / localhost)',
+      passed: isSecure,
+      detail: isSecure
+        ? 'Trình duyệt đang ở Secure Context hợp lệ.'
+        : 'Cần mở qua HTTPS hoặc localhost để trình duyệt cấp quyền WebMCP.',
+    },
+    {
+      id: 'origin-trial',
+      label: 'Origin Trial Token trong trang',
+      passed: info.hasOriginTrialToken,
+      detail: info.hasOriginTrialToken
+        ? info.isTrialOriginMatch
+          ? `Khớp tên miền Origin Trial (${WEBMCP_ORIGIN_TRIAL_INFO.hostnames.join(', ')}).`
+          : `Đã nhúng token; tên miền hiện tại cần khớp hoặc bật cờ thủ công.`
+        : 'Không tìm thấy thẻ meta origin-trial.',
+    },
+    {
+      id: 'model-context-port',
+      label: 'Cổng ModelContext của trình duyệt',
+      passed: info.available,
+      detail: info.available
+        ? `Hoạt động qua ${info.host}.modelContext${hasNativeEvents ? ' (hỗ trợ sự kiện toolactivated/toolcancel)' : ''}.`
+        : describeInactiveWebMcpReason(info),
+    },
+    {
+      id: 'tool-registry',
+      label: 'Bộ công cụ WebMCP trên route hiện tại',
+      passed: info.available,
+      detail: info.available
+        ? activeToolNames.length > 0
+          ? `Đang mở ${activeToolNames.length} công cụ: ${activeToolNames.join(', ')}.`
+          : 'Cổng sẵn sàng (các công cụ chuyên biệt tự đăng ký khi mở bài học / đề thi / CodeLab / Tiến độ).'
+        : 'Chưa thể đăng ký công cụ tự động khi ModelContext chưa bật.',
+    },
+  ] as const;
+
+  return {
+    ok: isSecure && info.available,
+    timestamp: new Date().toISOString(),
+    isSecureContext: isSecure,
+    support: info,
+    activeToolNames,
+    checks,
+  };
+}
+
+function wrapToolWithActivity(tool: WebMcpToolDefinition): WebMcpToolDefinition {
+  return {
+    ...tool,
+    execute: async args => {
+      markToolActivityStart(tool.name);
+      try {
+        return await tool.execute(args);
+      } finally {
+        markToolActivityEnd(tool.name, true);
+      }
+    },
+  };
+}
+
+function deactivateOwnerRecord(port: WebMcpModelContextPort, record: ActiveOwnerRecord): void {
+  if (!record.active) return;
+  record.active = false;
+  record.controller?.abort();
+  record.controller = null;
+  if (typeof port.unregisterTool === 'function') {
+    for (const tool of record.tools) {
+      try {
+        void Promise.resolve(port.unregisterTool(tool.name)).catch(() => {});
+      } catch {
+        // Ignore already-unregistered errors
+      }
+    }
+  }
+}
+
+function activateOwnerRecord(port: WebMcpModelContextPort, record: ActiveOwnerRecord): void {
+  if (record.active) return;
+  ensurePortLifecycleListeners(port);
+  const controller = new AbortController();
+  record.controller = controller;
+  record.active = true;
+
+  for (const rawTool of record.tools) {
+    const tool = wrapToolWithActivity(rawTool);
+    try {
+      void Promise.resolve(port.registerTool(tool, { signal: controller.signal })).catch(() => {
+        // Never retry without AbortSignal on async rejection (prevents orphan tools)
+      });
+    } catch (err) {
+      if (err instanceof TypeError) {
+        try {
+          void Promise.resolve(port.registerTool(tool)).catch(() => {});
+        } catch {
+          // Ignore unsupported registration error
+        }
+      }
+    }
+  }
+}
+
+function registerScopedWebMcpTools(tools: readonly WebMcpToolDefinition[]): {
+  readonly support: WebMcpSupportInfo;
+  readonly dispose: () => void;
+} {
+  const { port, info } = getBrowserModelContext();
+  if (!port) {
+    return { support: info, dispose: () => {} };
+  }
+
+  let stack = portOwnerStacks.get(port);
+  if (!stack) {
+    stack = [];
+    portOwnerStacks.set(port, stack);
+  }
+  const prevTop = stack[stack.length - 1];
+  if (prevTop) {
+    deactivateOwnerRecord(port, prevTop);
+  }
+
+  const record: ActiveOwnerRecord = {
+    id: Symbol('webmcp-owner'),
+    tools,
+    controller: null,
+    active: false,
+  };
+  stack.push(record);
+  activateOwnerRecord(port, record);
+
+  let disposed = false;
+  return {
+    support: info,
+    dispose: () => {
+      if (disposed) return;
+      disposed = true;
+      const currentStack = portOwnerStacks.get(port);
+      if (!currentStack) return;
+      const idx = currentStack.indexOf(record);
+      if (idx === -1) return;
+      const wasTop = idx === currentStack.length - 1;
+      currentStack.splice(idx, 1);
+      deactivateOwnerRecord(port, record);
+      if (wasTop) {
+        const nextTop = currentStack[currentStack.length - 1];
+        if (nextTop) {
+          activateOwnerRecord(port, nextTop);
+        }
+      }
+    },
+  };
+}
+
+const SINGLE_COACHING_INPUT_PROPERTIES = {
+  exerciseId: {
+    type: 'string',
+    description: 'Tùy chọn mã bài tập (dùng để kiểm tra khớp đề khi chấm hàng loạt).',
+  },
+  stepId: {
+    type: 'string',
+    description: 'Mã định danh của bước tự viết đang nhận xét (lấy từ activeStep.id).',
+  },
+  summary: {
+    type: 'string',
+    description: 'Nhận xét tổng quan ngắn gọn 1–2 câu bám sát giáo trình (hỗ trợ LaTeX $...$).',
+  },
+  verdict: {
+    type: 'string',
+    enum: ['pass', 'not-pass'],
+    description:
+      'Kết quả chấm Mức 1 (pass khi kết quả đúng, score >= 7.0/10 và không có tiêu chí missing; ngược lại not-pass). Bỏ trống nếu chỉ đang gợi mở Socratic.',
+  },
+  score: {
+    type: 'number',
+    description: 'Điểm số chấm trên thang 10 (bậc 0.25 hoặc 0.5).',
+  },
+  maxScore: {
+    type: 'number',
+    description: 'Thang điểm tối đa (mặc định 10).',
+  },
+  socraticQuestions: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Từ 1 đến 3 câu hỏi gợi mở giúp sinh viên tự phát hiện ý còn thiếu.',
+  },
+  criterionFeedback: {
+    type: 'array',
+    description: 'Đánh giá chi tiết theo từng mã criterionId trong rubricCriteria.',
+    items: {
+      type: 'object',
+      properties: {
+        criterionId: { type: 'string' },
+        status: { type: 'string', enum: ['met', 'partial', 'missing'] },
+        comment: { type: 'string' },
+      },
+      required: ['criterionId', 'status', 'comment'],
+      additionalProperties: false,
+    },
+  },
+  conventionWarnings: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Cảnh báo nếu bài nháp thiếu điều kiện định lý, sai quy ước dấu/ký hiệu hoặc thiếu đơn vị.',
+  },
+  citedSections: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Danh sách mục bài học trong giáo trình đã dùng để đối chiếu.',
+  },
+} as const;
 
 export function registerEssayWebMcpTools(bindings: EssayWebMcpBindings): {
   readonly support: WebMcpSupportInfo;
@@ -325,8 +716,6 @@ export function registerEssayWebMcpTools(bindings: EssayWebMcpBindings): {
   if (!port) {
     return { support: info, dispose: () => {} };
   }
-
-  const controller = new AbortController();
 
   const tools: readonly WebMcpToolDefinition[] = [
     {
@@ -442,60 +831,19 @@ export function registerEssayWebMcpTools(bindings: EssayWebMcpBindings): {
       name: 'hus_submit_essay_coaching',
       description:
         'Truyền nhận xét Socratic, câu hỏi gợi mở, cảnh báo ký hiệu/điều kiện và đánh giá từng tiêu chí rubric ngược về giao diện HUS Learning Hub cho sinh viên xem trực tiếp.',
+      annotations: { readOnlyHint: false, idempotentHint: true },
       inputSchema: {
         type: 'object',
         properties: {
-          stepId: {
-            type: 'string',
-            description: 'Mã định danh của bước tự viết đang nhận xét (lấy từ activeStep.id).',
-          },
-          summary: {
-            type: 'string',
-            description: 'Nhận xét tổng quan ngắn gọn 1–2 câu bám sát giáo trình (hỗ trợ LaTeX $...$).',
-          },
-          verdict: {
-            type: 'string',
-            enum: ['pass', 'not-pass'],
-            description:
-              'Kết quả chấm Mức 1 (pass khi kết quả đúng, score >= 7.0/10 và không có tiêu chí missing; ngược lại not-pass). Bỏ trống nếu chỉ đang gợi mở Socratic.',
-          },
-          score: {
-            type: 'number',
-            description: 'Điểm số chấm trên thang 10 (bậc 0.25 hoặc 0.5).',
-          },
-          maxScore: {
-            type: 'number',
-            description: 'Thang điểm tối đa (mặc định 10).',
-          },
-          socraticQuestions: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Từ 1 đến 3 câu hỏi gợi mở giúp sinh viên tự phát hiện ý còn thiếu.',
-          },
-          criterionFeedback: {
-            type: 'array',
-            description: 'Đánh giá chi tiết theo từng mã criterionId trong rubricCriteria.',
-            items: {
-              type: 'object',
-              properties: {
-                criterionId: { type: 'string' },
-                status: { type: 'string', enum: ['met', 'partial', 'missing'] },
-                comment: { type: 'string' },
-              },
-              required: ['criterionId', 'status', 'comment'],
-              additionalProperties: false,
-            },
-          },
-          conventionWarnings: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Cảnh báo nếu bài nháp thiếu điều kiện định lý, sai quy ước dấu/ký hiệu hoặc thiếu đơn vị.',
-          },
-          citedSections: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Danh sách mục bài học trong giáo trình đã dùng để đối chiếu.',
-          },
+          stepId: SINGLE_COACHING_INPUT_PROPERTIES.stepId,
+          summary: SINGLE_COACHING_INPUT_PROPERTIES.summary,
+          verdict: SINGLE_COACHING_INPUT_PROPERTIES.verdict,
+          score: SINGLE_COACHING_INPUT_PROPERTIES.score,
+          maxScore: SINGLE_COACHING_INPUT_PROPERTIES.maxScore,
+          socraticQuestions: SINGLE_COACHING_INPUT_PROPERTIES.socraticQuestions,
+          criterionFeedback: SINGLE_COACHING_INPUT_PROPERTIES.criterionFeedback,
+          conventionWarnings: SINGLE_COACHING_INPUT_PROPERTIES.conventionWarnings,
+          citedSections: SINGLE_COACHING_INPUT_PROPERTIES.citedSections,
         },
         required: ['stepId', 'summary'],
         additionalProperties: false,
@@ -581,6 +929,111 @@ export function registerEssayWebMcpTools(bindings: EssayWebMcpBindings): {
               };
             },
           },
+          {
+            name: 'hus_submit_exam_batch_coaching',
+            description:
+              'Đồng bộ điểm số Mức 1 (/10), nhận xét trình bày, câu hỏi gợi mở và đánh giá rubric cho nhiều câu trong đề thi đang mở chỉ bằng một lần gọi duy nhất.',
+            annotations: { readOnlyHint: false, idempotentHint: true },
+            inputSchema: {
+              type: 'object',
+              properties: {
+                items: {
+                  type: 'array',
+                  minItems: 1,
+                  description: 'Danh sách kết quả chấm từng bước tự luận (khớp theo stepId).',
+                  items: {
+                    type: 'object',
+                    properties: SINGLE_COACHING_INPUT_PROPERTIES,
+                    required: ['stepId', 'summary'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['items'],
+              additionalProperties: false,
+            },
+            execute: rawArgs => {
+              const rawItems =
+                typeof rawArgs === 'object' && rawArgs !== null
+                  ? (rawArgs as { items?: unknown }).items
+                  : undefined;
+              if (!Array.isArray(rawItems) || rawItems.length === 0) {
+                return {
+                  isError: true,
+                  content: [
+                    {
+                      type: 'text',
+                      text: 'Tham số `items` phải là một mảng không rỗng chứa kết quả chấm từng câu.',
+                    },
+                  ],
+                };
+              }
+
+              const seenStepIds = new Set<string>();
+              const validItems: TutorCoachingFeedback[] = [];
+              let skippedCount = 0;
+              let firstError: string | undefined;
+
+              for (const entry of rawItems) {
+                const requestedStepId =
+                  typeof entry === 'object' &&
+                  entry !== null &&
+                  typeof (entry as { stepId?: unknown }).stepId === 'string'
+                    ? (entry as { stepId: string }).stepId.trim()
+                    : '';
+                if (!requestedStepId || seenStepIds.has(requestedStepId)) {
+                  skippedCount += 1;
+                  continue;
+                }
+                const parsed = parseExternalTutorFeedback(
+                  entry,
+                  bindings.getExercise(requestedStepId),
+                  requestedStepId,
+                  'webmcp',
+                );
+                if (!parsed.ok) {
+                  skippedCount += 1;
+                  if (!firstError) firstError = parsed.error;
+                  continue;
+                }
+                seenStepIds.add(parsed.value.stepId);
+                validItems.push(parsed.value);
+              }
+
+              if (validItems.length === 0) {
+                return {
+                  isError: true,
+                  content: [
+                    {
+                      type: 'text',
+                      text: firstError
+                        ? `Không có mục phản hồi hợp lệ nào: ${firstError}`
+                        : 'Không có mục phản hồi hợp lệ nào khớp với mã stepId trên đề thi.',
+                    },
+                  ],
+                };
+              }
+
+              if (bindings.onReceiveBatchFeedback) {
+                bindings.onReceiveBatchFeedback(validItems);
+              } else {
+                for (const fb of validItems) {
+                  bindings.onReceiveFeedback(fb);
+                }
+              }
+
+              const skippedNote =
+                skippedCount > 0 ? ` (Bỏ qua ${skippedCount} mục không hợp lệ hoặc trùng lặp.)` : '';
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: `Đã đồng bộ chấm điểm & nhận xét cho ${validItems.length} ý tự luận (${validItems.map(v => v.stepId).join(', ')}) trực tiếp lên đề thi.${skippedNote}`,
+                  },
+                ],
+              };
+            },
+          },
         ] as const satisfies readonly WebMcpToolDefinition[])
       : []),
       ...(bindings.getLessonContextPacket
@@ -617,36 +1070,175 @@ export function registerEssayWebMcpTools(bindings: EssayWebMcpBindings): {
         : []),
   ];
 
-  for (const tool of tools) {
-    const registerWithFallback = () => {
-      try {
-        void Promise.resolve(port.registerTool(tool)).catch(() => {});
-      } catch {
-        // Ignore duplicate/unsupported registration errors cleanly
-      }
-    };
-    try {
-      void Promise.resolve(port.registerTool(tool, { signal: controller.signal })).catch(() => {
-        registerWithFallback();
-      });
-    } catch {
-      registerWithFallback();
-    }
-  }
+  return registerScopedWebMcpTools(tools);
+}
 
-  return {
-    support: info,
-    dispose: () => {
-      controller.abort();
-      if (typeof port.unregisterTool === 'function') {
-        for (const name of REGISTERED_TOOL_NAMES) {
-          try {
-            void port.unregisterTool(name);
-          } catch {
-            // Already unregistered via AbortSignal
-          }
-        }
-      }
+export interface CodeLabWebMcpBindings {
+  readonly getContextPacket: () => CodeLabWebMcpContextPacket;
+  readonly getLanguage: () => CodeLanguage;
+  readonly getProblemId: () => EntityId | undefined;
+  readonly onReceiveCoaching: (feedback: CodeLabCoachingFeedback) => void;
+}
+
+export function registerCodeLabWebMcpTools(bindings: CodeLabWebMcpBindings): {
+  readonly support: WebMcpSupportInfo;
+  readonly dispose: () => void;
+} {
+  const tools: readonly WebMcpToolDefinition[] = [
+    {
+      name: 'hus_get_codelab_context',
+      description:
+        'Trả về đề bài lập trình đang mở, mã nguồn sinh viên đang viết trong CodeLab, stdin tùy chỉnh và stdout/stderr hoặc test case hiển thị đang chạy/lỗi (ẩn test case bí mật).',
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: () => ({
+        content: [{ type: 'text', text: JSON.stringify(bindings.getContextPacket(), null, 2) }],
+      }),
     },
-  };
+    {
+      name: 'hus_submit_code_coaching',
+      description:
+        'Đẩy gợi ý debug Socratic, nguyên nhân lỗi từ stderr, trường hợp biên và đánh giá độ phức tạp O(.) ngược về giao diện CodeLab (tuyệt đối không viết hộ full code lời giải).',
+      annotations: { readOnlyHint: false, idempotentHint: true },
+      inputSchema: {
+        type: 'object',
+        properties: {
+          problemId: { type: 'string' },
+          language: { type: 'string', enum: ['python', 'java'] },
+          verdict: { type: 'string', enum: ['pass', 'needs-fix'] },
+          summary: { type: 'string' },
+          complexityNote: { type: 'string' },
+          bugHints: { type: 'array', items: { type: 'string' } },
+          edgeCases: { type: 'array', items: { type: 'string' } },
+          socraticQuestions: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['summary'],
+        additionalProperties: false,
+      },
+      execute: rawArgs => {
+        const parsed = parseExternalCodeLabFeedback(
+          rawArgs,
+          bindings.getLanguage(),
+          bindings.getProblemId(),
+          'webmcp',
+        );
+        if (!parsed.ok) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: `Dữ liệu phản hồi CodeLab chưa hợp lệ: ${parsed.error}` }],
+          };
+        }
+        bindings.onReceiveCoaching(parsed.value);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Đã hiển thị thẻ gợi ý debug Socratic trực tiếp trong CodeLab.',
+            },
+          ],
+        };
+      },
+    },
+  ];
+
+  return registerScopedWebMcpTools(tools);
+}
+
+export interface StudyDiagnosticsWebMcpBindings {
+  readonly getDiagnosticsReport: () => StudyDiagnosticsReport;
+  readonly onLaunchTargetedDrill: (params: {
+    readonly courseId: EntityId;
+    readonly pinnedExerciseIds: readonly EntityId[];
+  }) => void;
+}
+
+export function registerStudyDiagnosticsWebMcpTools(bindings: StudyDiagnosticsWebMcpBindings): {
+  readonly support: WebMcpSupportInfo;
+  readonly dispose: () => void;
+} {
+  const tools: readonly WebMcpToolDefinition[] = [
+    {
+      name: 'hus_get_study_diagnostics',
+      description:
+        'Đọc báo cáo chẩn đoán học tập cá nhân hóa: tiến độ từng học phần, điểm trung bình Mức 1 (/10), các lỗi ký hiệu/điều kiện lặp lại nhiều nhất và danh sách câu cần luyện lại.',
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+      execute: () => ({
+        content: [{ type: 'text', text: JSON.stringify(bindings.getDiagnosticsReport(), null, 2) }],
+      }),
+    },
+    {
+      name: 'hus_launch_targeted_drill',
+      description:
+        'Mở ngay phòng luyện đề tự luận (/exams) với danh sách câu hỏi yếu hoặc chưa đạt được ghim sẵn cho học phần chỉ định.',
+      annotations: { readOnlyHint: false, idempotentHint: true },
+      inputSchema: {
+        type: 'object',
+        properties: {
+          courseId: {
+            type: 'string',
+            description: 'Mã học phần (ví dụ mat1091, phy1159, general-chemistry).',
+          },
+          exerciseIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Danh sách mã câu hỏi cụ thể (tùy chọn; mặc định lấy các câu yếu của học phần).',
+          },
+        },
+        required: ['courseId'],
+        additionalProperties: false,
+      },
+      execute: rawArgs => {
+        const courseId =
+          typeof rawArgs === 'object' &&
+          rawArgs !== null &&
+          typeof (rawArgs as { courseId?: unknown }).courseId === 'string'
+            ? (rawArgs as { courseId: string }).courseId.trim()
+            : '';
+        const report = bindings.getDiagnosticsReport();
+        const explicitIds =
+          typeof rawArgs === 'object' &&
+          rawArgs !== null &&
+          Array.isArray((rawArgs as { exerciseIds?: unknown }).exerciseIds)
+            ? ((rawArgs as { exerciseIds: unknown[] }).exerciseIds.filter(
+                (id): id is string => typeof id === 'string' && id.trim().length > 0,
+              ))
+            : [];
+        const targetIds =
+          explicitIds.length > 0
+            ? explicitIds
+            : (report.weakExerciseIdsByCourse[courseId] ?? []);
+        if (!courseId || targetIds.length === 0) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: 'Không tìm thấy câu hỏi yếu nào thuộc học phần này để tạo đề luyện riêng.',
+              },
+            ],
+          };
+        }
+        bindings.onLaunchTargetedDrill({ courseId, pinnedExerciseIds: targetIds });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Đang mở phòng luyện đề riêng với ${targetIds.length} câu cần ôn lại của học phần "${courseId}".`,
+            },
+          ],
+        };
+      },
+    },
+  ];
+
+  return registerScopedWebMcpTools(tools);
 }

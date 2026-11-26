@@ -62,7 +62,7 @@ export function WebMcpNoticeToast() {
     <aside
       aria-label="Thông báo trạng thái WebMCP"
       data-webmcp-toast="missing"
-      className="hus-panel-enter fixed bottom-4 right-3 z-40 max-w-[calc(100vw-1.5rem)] rounded-[var(--radius-xl)] border border-warning/45 bg-surface/98 p-4 shadow-[var(--hus-shadow-sheet)] sm:right-5 sm:w-[26.5rem]"
+      className="hus-panel-enter fixed bottom-20 right-3 z-40 max-w-[calc(100vw-1.5rem)] rounded-[var(--radius-xl)] border border-warning/45 bg-surface/98 p-4 shadow-[var(--hus-shadow-sheet)] sm:right-5 sm:w-[26.5rem] md:bottom-4"
     >
       <div className="flex items-start justify-between gap-2.5">
         <div className="flex items-center gap-2 text-warning">

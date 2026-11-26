@@ -11,8 +11,10 @@ import {
 } from '../core/learning/progress';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { useQuestProgress } from '../app/useQuestProgress';
+import { resolveCourseConventionCanon } from '../content/curriculum-canons';
 import { getQuestsForCourse } from '../infrastructure/quests/registry';
 import { CourseAtlas } from '../components/learning/CourseAtlas';
+import { CourseStudyGuideBanner } from '../components/learning/CourseStudyGuideBanner';
 import { NotebookLmExportControl } from '../components/learning/NotebookLmExportControl';
 import { getCourseSubject } from '../core/courses/search';
 import {
@@ -74,6 +76,13 @@ export default function CoursePage() {
 
   const subject = getCourseSubject(course, subjectList);
   const subjectModule = getSubjectModule(course.subjectId);
+  const disciplineTone = subjectModule?.visualTheme?.tone;
+  const canon = resolveCourseConventionCanon({
+    courseId: course.id,
+    academicCode: course.academicCode,
+    subjectId: course.subjectId,
+    courseTitle: course.title,
+  });
   const code = course.academicCode ?? course.id;
   const isAvailable = course.status === 'available';
   const practiceOnly = isPracticeOnlyCourse(course);
@@ -348,6 +357,7 @@ export default function CoursePage() {
       <CourseAtlas
         course={course}
         content={learningContent}
+        disciplineTone={disciplineTone}
         courseQuests={courseQuests}
         completedQuestIds={questProgress.completedQuestIds}
         writtenExercises={writingExercises}
@@ -369,6 +379,7 @@ export default function CoursePage() {
     <div className="min-w-0 space-y-8 overflow-x-clip">
       {/* Atmospheric Observatory course masthead */}
       <ObservatoryHeader
+        disciplineTone={disciplineTone}
         breadcrumbs={
           <Breadcrumbs
             items={[
@@ -470,6 +481,8 @@ export default function CoursePage() {
           ) : undefined
         }
       />
+
+      {isAvailable ? <CourseStudyGuideBanner canon={canon} disciplineTone={disciplineTone} /> : null}
 
       {isDualTrack ? (
         <div className="space-y-8">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type {
+  CoachingHistoryEntry,
   CoachingPromptMode,
   CourseConventionCanon,
   CurriculumChunk,
@@ -14,10 +15,12 @@ import type {
   SemiEssayExercise,
   WrittenReasoningStep,
 } from '../../domain/semi-essay';
+import { buildRevisionDiffContext } from '../../core/learning/coaching-memory';
 import {
   buildGroundedEssayContextPacket,
   composeExamReadyEssay,
-  searchCurriculumChunks,
+  prepareCurriculumSearchIndex,
+  searchPreparedCurriculumIndex,
   synthesizeFallbackTheoryAnchors,
 } from '../../core/learning/curriculum-rag';
 import {
@@ -31,8 +34,10 @@ import {
 } from '../../core/learning/semi-essay';
 import {
   loadStoredTutorFeedback,
+  loadStoredTutorFeedbackHistory,
   parseExternalTutorFeedback,
   saveStoredTutorFeedback,
+  saveStoredTutorFeedbackWithHistory,
 } from '../../infrastructure/ai/tutor-feedback-parser';
 import {
   detectWebMcpSupport,
@@ -40,6 +45,7 @@ import {
 } from '../../infrastructure/ai/webmcp-essay-bridge';
 import {
   clearInteractiveStepDraft,
+  collectExerciseInteractiveDraftSummaries,
 } from '../../infrastructure/practice/interactive-step-drafts';
 import {
   loadCompletedSemiEssaySteps,
@@ -111,6 +117,9 @@ export function SemiEssayStudio({
   const [coachingByStepId, setCoachingByStepId] = useState<
     Readonly<Record<string, TutorCoachingFeedback>>
   >(() => loadStoredTutorFeedback(exercise));
+  const [coachingHistoryByStepId, setCoachingHistoryByStepId] = useState<
+    Readonly<Record<string, readonly CoachingHistoryEntry[]>>
+  >(() => loadStoredTutorFeedbackHistory(exercise.id));
   const [webMcpAvailable, setWebMcpAvailable] = useState<boolean>(
     () => detectWebMcpSupport().available,
   );
@@ -133,9 +142,21 @@ export function SemiEssayStudio({
   const activeStep = exercise.steps[activeIndex] ?? exercise.steps[0];
   const fadeLevel = exercise.fadeLevel ?? 0;
 
+  const preparedCurriculumIndex = useMemo(
+    () => prepareCurriculumSearchIndex(curriculumChunks),
+    [curriculumChunks],
+  );
+
   const resolvedTheory = useMemo(
-    () => synthesizeFallbackTheoryAnchors(curriculumChunks, exercise, activeIndex),
-    [curriculumChunks, exercise, activeIndex],
+    () =>
+      synthesizeFallbackTheoryAnchors(
+        curriculumChunks,
+        exercise,
+        activeIndex,
+        3,
+        preparedCurriculumIndex,
+      ),
+    [curriculumChunks, exercise, activeIndex, preparedCurriculumIndex],
   );
 
   const applyCoachingFeedback = (feedback: TutorCoachingFeedback) => {
@@ -151,12 +172,13 @@ export function SemiEssayStudio({
         onRecordTutorAttempt?.(true, feedback.receivedAt);
       }
     }
-    setCoachingByStepId(prev => {
-      const next = { ...prev, [feedback.stepId]: feedback };
-      saveStoredTutorFeedback(exercise.id, next);
-      return next;
-    });
     const currentDraft = drafts[feedback.stepId] ?? emptyWrittenStepDraft();
+    const savedHistory = saveStoredTutorFeedbackWithHistory(exercise, nextPreview, {
+      updatedStepId: feedback.stepId,
+      draftSnapshot: currentDraft.response,
+    });
+    setCoachingByStepId(nextPreview);
+    setCoachingHistoryByStepId(prev => ({ ...prev, ...savedHistory }));
     const syncedCriteria = syncCriteriaFromCoachingFeedback(
       currentDraft.reviewedCriterionIds,
       feedback,
@@ -184,6 +206,12 @@ export function SemiEssayStudio({
     mode: CoachingPromptMode,
   ) => {
     if (!canon) return null;
+    const stepDraft = drafts[step.id] ?? emptyWrittenStepDraft();
+    const interactiveSummaries = collectExerciseInteractiveDraftSummaries(exercise, '');
+    const revisionDiffContext = buildRevisionDiffContext(
+      coachingHistoryByStepId[step.id] ?? [],
+      stepDraft.response,
+    );
     return buildGroundedEssayContextPacket({
       mode,
       canon,
@@ -191,9 +219,14 @@ export function SemiEssayStudio({
       exercise,
       step,
       stepNumber,
-      draft: drafts[step.id] ?? emptyWrittenStepDraft(),
+      draft: stepDraft,
       chunks: curriculumChunks,
+      preparedIndex: preparedCurriculumIndex,
       effectiveTheoryAnchors: resolvedTheory.anchors,
+      ...(interactiveSummaries.length > 0
+        ? { studentInteractiveWorkSummary: interactiveSummaries }
+        : {}),
+      ...(revisionDiffContext ? { revisionDiffContext } : {}),
     });
   };
 
@@ -203,6 +236,7 @@ export function SemiEssayStudio({
     activeIndex,
     canon,
     curriculumChunks,
+    preparedCurriculumIndex,
     onSearchCourseCurriculum,
     buildStepPacket,
     applyCoachingFeedback,
@@ -213,6 +247,7 @@ export function SemiEssayStudio({
     activeIndex,
     canon,
     curriculumChunks,
+    preparedCurriculumIndex,
     onSearchCourseCurriculum,
     buildStepPacket,
     applyCoachingFeedback,
@@ -223,20 +258,28 @@ export function SemiEssayStudio({
     const registration = registerEssayWebMcpTools({
       getExercise: () => liveBridgeRef.current.exercise,
       getActiveStepId: () => liveBridgeRef.current.activeStep?.id ?? '',
-      getContextPacket: mode => {
-        const curStep = liveBridgeRef.current.activeStep;
-        if (!curStep || curStep.kind !== 'written-reasoning') return null;
-        return liveBridgeRef.current.buildStepPacket(
-          curStep,
-          liveBridgeRef.current.activeIndex + 1,
-          mode,
-        );
+      getContextPacket: (mode, requestedStepId) => {
+        const curExercise = liveBridgeRef.current.exercise;
+        let targetIndex = liveBridgeRef.current.activeIndex;
+        let targetStep = liveBridgeRef.current.activeStep;
+        if (requestedStepId) {
+          const matchedIdx = curExercise.steps.findIndex(
+            s => s.kind === 'written-reasoning' && s.id === requestedStepId,
+          );
+          if (matchedIdx < 0) return null;
+          targetIndex = matchedIdx;
+          targetStep = curExercise.steps[matchedIdx];
+        }
+        if (!targetStep || targetStep.kind !== 'written-reasoning') return null;
+        return liveBridgeRef.current.buildStepPacket(targetStep, targetIndex + 1, mode);
       },
       searchCurriculum: async (query, expandCourse) => {
         if (liveBridgeRef.current.onSearchCourseCurriculum) {
           return liveBridgeRef.current.onSearchCourseCurriculum(query, expandCourse);
         }
-        return searchCurriculumChunks(liveBridgeRef.current.curriculumChunks, query, { limit: 4 });
+        return searchPreparedCurriculumIndex(liveBridgeRef.current.preparedCurriculumIndex, query, {
+          limit: 4,
+        });
       },
       onReceiveFeedback: feedback => {
         liveBridgeRef.current.applyCoachingFeedback(feedback);
@@ -443,6 +486,7 @@ export function SemiEssayStudio({
                           scaffolds={canon?.reasoningScaffolds}
                           webMcpAvailable={webMcpAvailable}
                           coachingFeedback={coachingByStepId[step.id]}
+                          coachingHistory={coachingHistoryByStepId[step.id]}
                           getGroundedPacket={
                             canon
                               ? mode => buildStepPacket(step, idx + 1, mode)!

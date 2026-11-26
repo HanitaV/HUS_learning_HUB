@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import type { DisciplineTone } from '../../contracts/subject-module';
 
 export interface ObservatoryHeaderProps {
   readonly breadcrumbs?: ReactNode;
@@ -7,6 +8,7 @@ export interface ObservatoryHeaderProps {
   readonly description?: ReactNode;
   readonly aside?: ReactNode;
   readonly footer?: ReactNode;
+  readonly disciplineTone?: DisciplineTone | undefined;
 }
 
 /**
@@ -21,9 +23,15 @@ export function ObservatoryHeader({
   description,
   aside,
   footer,
+  disciplineTone,
 }: ObservatoryHeaderProps) {
+  const haloId = useId();
+
   return (
-    <header className="hus-card-surface relative isolate overflow-hidden rounded-[var(--radius-xl)] border border-border bg-surface px-5 py-6 sm:px-8 sm:py-8">
+    <header
+      data-discipline={disciplineTone}
+      className="hus-card-surface relative isolate overflow-hidden rounded-[var(--radius-xl)] border border-[var(--disc-border,var(--hus-border))] bg-surface px-5 py-6 sm:px-8 sm:py-8"
+    >
       {/* Subtle cropped celestial horizon arc */}
       <div
         aria-hidden="true"
@@ -37,18 +45,26 @@ export function ObservatoryHeader({
           className="h-full w-full"
         >
           <defs>
-            <radialGradient id="hus-header-halo" cx="88%" cy="18%" r="44%">
-              <stop offset="0%" stopColor="var(--hus-glow-core)" />
+            <radialGradient id={haloId} cx="88%" cy="18%" r="44%">
+              <stop offset="0%" stopColor="var(--disc-glow, var(--hus-glow-core))" />
               <stop offset="100%" stopColor="transparent" />
             </radialGradient>
           </defs>
-          <circle cx="840" cy="40" r="300" fill="url(#hus-header-halo)" />
-          <circle cx="840" cy="40" r="240" stroke="var(--hus-orbit)" strokeWidth="1" />
+          <circle cx="840" cy="40" r="300" fill={`url(#${haloId})`} />
+          <circle
+            cx="840"
+            cy="40"
+            r="240"
+            stroke={disciplineTone ? 'var(--disc-accent)' : 'var(--hus-orbit)'}
+            strokeOpacity={disciplineTone ? 0.2 : undefined}
+            strokeWidth="1"
+          />
           <circle
             cx="840"
             cy="40"
             r="164"
-            stroke="var(--hus-orbit-strong)"
+            stroke={disciplineTone ? 'var(--disc-accent)' : 'var(--hus-orbit-strong)'}
+            strokeOpacity={disciplineTone ? 0.32 : undefined}
             strokeWidth="1"
             strokeDasharray="3 7"
           />
@@ -58,11 +74,24 @@ export function ObservatoryHeader({
             rx="310"
             ry="108"
             transform="rotate(-16 840 40)"
-            stroke="var(--hus-orbit)"
+            stroke={disciplineTone ? 'var(--disc-accent)' : 'var(--hus-orbit)'}
+            strokeOpacity={disciplineTone ? 0.18 : undefined}
             strokeWidth="1"
           />
-          <circle cx="678" cy="64" r="3" fill="var(--hus-accent)" fillOpacity="0.72" />
-          <circle cx="776" cy="192" r="2.5" fill="var(--hus-starlight)" fillOpacity="0.8" />
+          <circle
+            cx="678"
+            cy="64"
+            r="3"
+            fill="var(--disc-accent, var(--hus-accent))"
+            fillOpacity="0.72"
+          />
+          <circle
+            cx="776"
+            cy="192"
+            r="2.5"
+            fill="var(--disc-accent, var(--hus-starlight))"
+            fillOpacity="0.8"
+          />
         </svg>
       </div>
 

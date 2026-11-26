@@ -1,9 +1,9 @@
 import { memo, useRef, useState, type KeyboardEvent, type TouchEvent, type WheelEvent } from 'react';
 import { Link } from 'react-router';
+import type { DisciplineTone } from '../../contracts/subject-module';
 import { DEFAULT_ORBIT_PAGE_SIZE, paginateItems } from '../../core/courses/search';
 import type { PeriodicElement } from '../../core/learning/elements';
 import type { Course, Subject } from '../../domain/learning';
-import { Badge } from '../ui/Badge';
 import { ChevronLeftIcon, ChevronRightIcon } from '../ui/Icons';
 import { SearchInput } from '../ui/SearchInput';
 import { AtomicCourseEmblem } from './AtomicCourseEmblem';
@@ -14,6 +14,8 @@ export interface OrbitalCourseItem {
   readonly lessonCount: number;
   readonly progressPercent?: number | undefined;
   readonly matchedElement?: PeriodicElement | null | undefined;
+  readonly disciplineTone?: DisciplineTone | undefined;
+  readonly studyBadge?: string | undefined;
 }
 
 export interface OrbitalCourseUniverseProps {
@@ -304,6 +306,7 @@ export const OrbitalCourseUniverse = memo(function OrbitalCourseUniverse({
             {...(onSearchKeyDown ? { onKeyDown: onSearchKeyDown } : {})}
             placeholder="Tìm học phần, bài giảng (ví dụ: khong thu nguyen)…"
             label="Tìm kiếm trong danh mục học phần"
+            className="max-sm:[&_input]:text-base"
           />
 
           <p className="mt-2 text-center text-xs text-ink-muted">
@@ -350,110 +353,132 @@ export const OrbitalCourseUniverse = memo(function OrbitalCourseUniverse({
           isEmpty ? 'max-lg:hidden' : 'mt-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2'
         }`}
       >
-        {visiblePool.map(({ course, subject, lessonCount, progressPercent, matchedElement }, baseIndex) => {
-          const isMatched = visibleMatchedIds.has(course.id);
-          const basePos = getOrbitPosition(baseIndex, Math.max(1, visiblePool.length));
-          const flySide = getFlySide(basePos.leftPct, baseIndex);
-          const matchedIndex = matchedOrder.get(course.id);
-          const pos =
-            isMatched && matchedIndex !== undefined
-              ? getOrbitPosition(matchedIndex, Math.max(1, activeOrbitCount), flySide)
-              : basePos;
-          const code = course.academicCode ?? course.id.toUpperCase();
-          const isAvailable = course.status === 'available';
-          const floatClass = `hus-float-node-${baseIndex % 3}`;
-          const enterClass =
-            pageDirection === 'next'
-              ? 'hus-orbital-page-next'
-              : pageDirection === 'prev'
-                ? 'hus-orbital-page-prev'
-                : 'hus-orbital-card-enter';
+        {visiblePool.map(
+          (
+            {
+              course,
+              subject,
+              lessonCount,
+              progressPercent,
+              matchedElement,
+              disciplineTone,
+              studyBadge,
+            },
+            baseIndex,
+          ) => {
+            const isMatched = visibleMatchedIds.has(course.id);
+            const basePos = getOrbitPosition(baseIndex, Math.max(1, visiblePool.length));
+            const flySide = getFlySide(basePos.leftPct, baseIndex);
+            const matchedIndex = matchedOrder.get(course.id);
+            const pos =
+              isMatched && matchedIndex !== undefined
+                ? getOrbitPosition(matchedIndex, Math.max(1, activeOrbitCount), flySide)
+                : basePos;
+            const code = course.academicCode ?? course.id.toUpperCase();
+            const isAvailable = course.status === 'available';
+            const tone = disciplineTone ?? 'sapphire';
+            const floatClass = `hus-float-node-${baseIndex % 3}`;
+            const enterClass =
+              pageDirection === 'next'
+                ? 'hus-orbital-page-next'
+                : pageDirection === 'prev'
+                  ? 'hus-orbital-page-prev'
+                  : 'hus-orbital-card-enter';
 
-          return (
-            <div
-              key={course.id}
-              data-matched={isMatched ? 'true' : 'false'}
-              data-filtered={isFiltered ? 'true' : 'false'}
-              data-side={flySide}
-              aria-hidden={!isMatched}
-              className={`hus-orbital-slot ${isMatched ? '' : 'max-lg:hidden'}`}
-              style={{
-                left: `${pos.leftPct.toFixed(2)}%`,
-                top: `${pos.topPct.toFixed(2)}%`,
-              }}
-            >
+            return (
               <div
-                className={floatClass}
-                style={{ animationDelay: `${baseIndex * 0.45}s` }}
+                key={course.id}
+                data-matched={isMatched ? 'true' : 'false'}
+                data-filtered={isFiltered ? 'true' : 'false'}
+                data-side={flySide}
+                aria-hidden={!isMatched}
+                className={`hus-orbital-slot ${isMatched ? '' : 'max-lg:hidden'}`}
+                style={{
+                  left: `${pos.leftPct.toFixed(2)}%`,
+                  top: `${pos.topPct.toFixed(2)}%`,
+                }}
               >
-                <Link
-                  key={`${course.id}-p${pageWindow.page}-${pageDirection}`}
-                  to={`/courses/${course.id}`}
-                  tabIndex={isMatched ? 0 : -1}
-                  title={
-                    matchedElement
-                      ? `Nguyên tố ${matchedElement.nameVi} (${matchedElement.symbol}, Z = ${matchedElement.atomicNumber}): ${matchedElement.funFact}`
-                      : undefined
-                  }
-                  style={
-                    pageDirection !== 'none'
-                      ? { animationDelay: `${baseIndex * 35}ms` }
-                      : undefined
-                  }
-                  className={`${enterClass} group relative flex items-center gap-3.5 rounded-[var(--radius-xl)] border bg-surface/96 px-4 py-3.5 no-underline transition-[border-color,box-shadow,transform,background-color] duration-300 ease-[var(--hus-ease)] hover:scale-[1.03] hover:border-accent hover:bg-surface active:scale-[0.98] ${
-                    isAvailable
-                      ? 'border-accent/40 shadow-[0_8px_28px_-14px_rgb(26_86_219/0.35)]'
-                      : 'border-border shadow-[var(--hus-shadow-card)]'
-                  }`}
+                <div
+                  className={floatClass}
+                  style={{ animationDelay: `${baseIndex * 0.45}s` }}
                 >
-                  {/* Top-left Periodic Element Stamp when course shells match a real element */}
-                  {matchedElement ? (
-                    <span
-                      aria-label={`Nguyên tố ${matchedElement.nameVi} (${matchedElement.symbol}, Z = ${matchedElement.atomicNumber})`}
-                      className="absolute -left-2 -top-2.5 z-10 inline-flex items-baseline gap-1 rounded-[var(--radius-sm)] border border-starlight/50 bg-surface px-1.5 py-0.5 font-mono text-xs font-semibold leading-none text-starlight shadow-xs"
-                    >
-                      <span>{matchedElement.atomicNumber}</span>
-                      <span className="font-display text-sm text-ink">{matchedElement.symbol}</span>
-                    </span>
-                  ) : null}
+                  <Link
+                    key={`${course.id}-p${pageWindow.page}-${pageDirection}`}
+                    to={`/courses/${course.id}`}
+                    data-discipline={tone}
+                    tabIndex={isMatched ? 0 : -1}
+                    title={
+                      matchedElement
+                        ? `Nguyên tố ${matchedElement.nameVi} (${matchedElement.symbol}, Z = ${matchedElement.atomicNumber}): ${matchedElement.funFact}`
+                        : undefined
+                    }
+                    style={
+                      pageDirection !== 'none'
+                        ? { animationDelay: `${baseIndex * 35}ms` }
+                        : undefined
+                    }
+                    className={`${enterClass} hus-disc-card group relative flex items-center gap-3.5 rounded-[var(--radius-xl)] border px-4 py-3.5 no-underline transition-[border-color,box-shadow,transform,background-color] duration-300 ease-[var(--hus-ease)] hover:scale-[1.03] hover:border-[var(--disc-accent)] active:scale-[0.98] ${
+                      isAvailable
+                        ? 'border-[var(--disc-border-strong)] shadow-[0_8px_28px_-14px_var(--disc-glow)]'
+                        : 'border-[var(--disc-border)] shadow-[var(--hus-shadow-card)]'
+                    }`}
+                  >
+                    {/* Top-left Periodic Element Stamp when course shells match a real element */}
+                    {matchedElement ? (
+                      <span
+                        aria-label={`Nguyên tố ${matchedElement.nameVi} (${matchedElement.symbol}, Z = ${matchedElement.atomicNumber})`}
+                        className="absolute -left-2 -top-2.5 z-10 inline-flex items-baseline gap-1 rounded-[var(--radius-sm)] border border-starlight/50 bg-surface px-1.5 py-0.5 font-mono text-xs font-semibold leading-none text-starlight shadow-xs"
+                      >
+                        <span>{matchedElement.atomicNumber}</span>
+                        <span className="font-display text-sm text-ink">{matchedElement.symbol}</span>
+                      </span>
+                    ) : null}
 
-                  <AtomicCourseEmblem
-                    shellCount={course.chapterIds.length}
-                    electronCount={lessonCount}
-                    isActive={isAvailable}
-                    progressPercent={progressPercent}
-                  />
+                    <AtomicCourseEmblem
+                      shellCount={course.chapterIds.length}
+                      electronCount={lessonCount}
+                      isActive={isAvailable}
+                      progressPercent={progressPercent}
+                      disciplineTone={disciplineTone}
+                    />
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge tone="accent" mono>
-                        {code}
-                      </Badge>
-                      {isAvailable ? (
-                        <span
-                          className="inline-block h-2 w-2 rounded-full bg-success"
-                          title="Có nội dung học"
-                          aria-label="Có nội dung học"
-                        />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex items-center rounded-[var(--radius-sm)] bg-[var(--disc-solid)] px-2 py-0.5 font-mono text-xs font-semibold text-white">
+                          {code}
+                        </span>
+                        {isAvailable ? (
+                          <span
+                            className="inline-block h-2 w-2 rounded-full bg-success"
+                            title="Có nội dung học"
+                            aria-label="Có nội dung học"
+                          />
+                        ) : null}
+                      </div>
+
+                      <h3 className="mt-1.5 line-clamp-2 font-display text-base font-medium leading-snug text-[var(--disc-ink)] transition-colors duration-200 group-hover:text-[var(--disc-accent)]">
+                        {course.title}
+                      </h3>
+
+                      <p className="mt-0.5 truncate text-xs text-[var(--disc-ink-muted)] tabular-nums">
+                        {subject ? `${subject.title} · ` : ''}
+                        {lessonCount > 0
+                          ? `${course.chapterIds.length} tầng · ${lessonCount} bài`
+                          : `${course.resourceIds.length} tài liệu`}
+                      </p>
+
+                      {studyBadge ? (
+                        <p className="mt-1 truncate text-[11px] font-medium text-[var(--disc-accent)]">
+                          {studyBadge}
+                        </p>
                       ) : null}
                     </div>
-
-                    <h3 className="mt-1.5 line-clamp-2 font-display text-base font-medium leading-snug text-ink transition-colors duration-200 group-hover:text-accent">
-                      {course.title}
-                    </h3>
-
-                    <p className="mt-0.5 truncate text-xs text-ink-muted tabular-nums">
-                      {subject ? `${subject.title} · ` : ''}
-                      {lessonCount > 0
-                        ? `${course.chapterIds.length} tầng · ${lessonCount} bài`
-                        : `${course.resourceIds.length} tài liệu`}
-                    </p>
-                  </div>
-                </Link>
+                  </Link>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          },
+        )}
       </div>
 
       {/* Empty State revealed directly beneath the elevated Search Nucleus */}

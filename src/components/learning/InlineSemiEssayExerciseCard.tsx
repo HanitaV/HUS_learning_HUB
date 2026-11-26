@@ -284,7 +284,7 @@ export function InlineSemiEssayExerciseCard({
       </div>
 
       {error ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="status" className="text-sm text-danger">
           {error}
         </p>
       ) : null}
@@ -454,6 +454,7 @@ export function InlineSemiEssayExerciseCard({
                         scaffolds={inlineA4Bridge?.canon.reasoningScaffolds}
                         webMcpAvailable={inlineA4Bridge?.webMcpAvailable ?? false}
                         coachingFeedback={inlineA4Bridge?.coachingByStepId[step.id]}
+                        coachingHistory={inlineA4Bridge?.coachingHistoryByStepId?.[step.id]}
                         getGroundedPacket={
                           inlineA4Bridge
                             ? mode => {

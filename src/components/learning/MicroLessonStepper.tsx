@@ -23,6 +23,7 @@ export interface MicroLessonStepperProps {
   readonly onCompleteLesson?: (() => void) | undefined;
   readonly onSwitchToFullMode?: (() => void) | undefined;
   readonly onAllCardsCompleted?: (() => void) | undefined;
+  readonly onActiveCardChange?: ((card: MicroLessonCard, index: number) => void) | undefined;
   readonly afterCardContent?: ReactNode;
 }
 
@@ -40,6 +41,7 @@ function MicroLessonStepperInner({
   isLessonCompleted = false,
   onCompleteLesson,
   onAllCardsCompleted,
+  onActiveCardChange,
   afterCardContent,
 }: MicroLessonStepperProps): JSX.Element {
   const cards = parsed.cards;
@@ -48,6 +50,8 @@ function MicroLessonStepperInner({
   const [completedCardIds, setCompletedCardIds] = useState<readonly string[]>([]);
   const [revealedCheckIds, setRevealedCheckIds] = useState<readonly string[]>([]);
   const [burstKey, setBurstKey] = useState(0);
+  const onActiveCardChangeRef = useRef(onActiveCardChange);
+  onActiveCardChangeRef.current = onActiveCardChange;
 
   const scrollToStepperTop = () => {
     if (typeof window === 'undefined' || !stepperTopRef.current) return;
@@ -68,6 +72,12 @@ function MicroLessonStepperInner({
 
   const safeIndex = cards.length > 0 ? Math.min(currentIndex, cards.length - 1) : 0;
   const currentCard: MicroLessonCard | undefined = cards[safeIndex];
+
+  useEffect(() => {
+    if (currentCard) {
+      onActiveCardChangeRef.current?.(currentCard, safeIndex);
+    }
+  }, [currentCard, safeIndex]);
 
   const animationCardIndex = useMemo(() => {
     if (!animationSpec) return -1;

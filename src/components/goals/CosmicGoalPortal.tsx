@@ -18,13 +18,14 @@ import {
   type GoalCatalogFilter,
   type GoalCatalogItem,
 } from '../../core/learning/goal-pathway';
+import type { DisciplineTone } from '../../contracts/subject-module';
 import type { Chapter, Course, EntityId, Subject } from '../../domain/learning';
 import type { SkillQuest } from '../../domain/skill-quest';
 import type { LearningContent } from '../../domain/workspace';
 import { LearningFlowNeighborhoodGraph } from '../learning/LearningFlowNeighborhoodGraph';
 import { Badge } from '../ui/Badge';
 import { GuidingBeacon } from '../ui/GuidingBeacon';
-import { ArrowRightIcon, CheckCircleIcon, ClockIcon } from '../ui/Icons';
+import { ArrowRightIcon, CheckCircleIcon, CheckIcon, ClockIcon } from '../ui/Icons';
 import { SearchInput } from '../ui/SearchInput';
 import { StarlightBurst } from '../ui/StarlightBurst';
 
@@ -35,6 +36,7 @@ export interface CosmicGoalPortalProps {
   readonly quests: readonly SkillQuest[];
   readonly completedLessonIds: readonly string[];
   readonly completedQuestIds: readonly string[];
+  readonly subjectTones?: Readonly<Record<EntityId, DisciplineTone>> | undefined;
   readonly onActiveSubjectChange?: ((subjectId: EntityId | 'all') => void) | undefined;
 }
 
@@ -193,9 +195,9 @@ function GoalCardBadges({
   const totalLessons = item.lessonIds?.length ?? 0;
   return (
     <span className="flex flex-wrap items-center gap-1.5">
-      <Badge tone="accent" mono>
+      <span className="inline-flex items-center rounded-[var(--radius-sm)] bg-[var(--disc-solid,var(--hus-accent-solid))] px-2 py-0.5 font-mono text-xs font-semibold text-white">
         {item.courseCode}
-      </Badge>
+      </span>
       {item.kind === 'chapter' ? (
         <Badge tone="success">
           {chapterDoneCount > 0 && chapterDoneCount < totalLessons
@@ -218,6 +220,7 @@ export function CosmicGoalPortal({
   quests,
   completedLessonIds,
   completedQuestIds,
+  subjectTones,
   onActiveSubjectChange,
 }: CosmicGoalPortalProps): JSX.Element {
   const headingId = useId();
@@ -571,6 +574,7 @@ export function CosmicGoalPortal({
             const settleStyle: CSSProperties = {
               animationDelay: `${Math.min(idx, 6) * 20}ms`,
             };
+            const tone = subjectTones?.[item.subjectId] ?? 'sapphire';
 
             return (
               <div
@@ -584,6 +588,7 @@ export function CosmicGoalPortal({
                   <button
                     type="button"
                     data-floating-goal="true"
+                    data-discipline={tone}
                     tabIndex={isGridOpen || hideInnerOnExpand ? -1 : 0}
                     aria-hidden={hideInnerOnExpand}
                     aria-pressed={selected}
@@ -598,7 +603,7 @@ export function CosmicGoalPortal({
                       className={`hus-cosmic-float-${idx % 3} relative flex w-full flex-col gap-2 rounded-[var(--radius-lg)] border p-3.5 shadow-[var(--hus-shadow-card)] ${
                         selected
                           ? 'z-30 scale-[1.03] border-starlight bg-warning-subtle opacity-100 ring-1 ring-starlight/45'
-                          : `hus-cosmic-depth-${slot.depth} border-border-strong bg-surface/96 group-hover:border-accent/60 group-hover:bg-surface group-hover:opacity-100`
+                          : `hus-disc-card hus-cosmic-depth-${slot.depth} border-[var(--disc-border-strong)] group-hover:border-[var(--disc-accent)] group-hover:opacity-100`
                       }`}
                     >
                       <span className="flex flex-wrap items-center justify-between gap-1.5">
@@ -614,11 +619,19 @@ export function CosmicGoalPortal({
                         ) : null}
                       </span>
 
-                      <span className="line-clamp-2 text-xs font-semibold leading-snug text-ink">
+                      <span
+                        className={`line-clamp-2 text-xs font-semibold leading-snug ${
+                          selected ? 'text-ink' : 'text-[var(--disc-ink)]'
+                        }`}
+                      >
                         {item.title}
                       </span>
 
-                      <span className="flex items-center justify-between gap-2 text-[11px] text-ink-muted">
+                      <span
+                        className={`flex items-center justify-between gap-2 text-[11px] ${
+                          selected ? 'text-ink-muted' : 'text-[var(--disc-ink-muted)]'
+                        }`}
+                      >
                         <span className="inline-flex items-center gap-1 font-mono tabular-nums">
                           <ClockIcon width={12} height={12} />
                           <span>
@@ -627,7 +640,7 @@ export function CosmicGoalPortal({
                               : `~${item.estimatedMinutes} phút`}
                           </span>
                         </span>
-                        <span className="font-medium text-accent">
+                        <span className={`font-medium ${selected ? 'text-accent' : 'text-[var(--disc-accent)]'}`}>
                           {selected
                             ? 'Đang mở'
                             : item.kind === 'chapter'
@@ -668,13 +681,14 @@ export function CosmicGoalPortal({
               onChange={handleQueryChange}
               label="Tìm kiếm mục tiêu kiến thức"
               placeholder="Tìm chương học (vd: Chương 1, Cơ học, Mảng) hoặc kiến thức cụ thể (đệ quy, thuyết MO…)"
+              className="max-sm:[&_input]:text-base"
             />
           </div>
 
           <div className="mt-3.5 space-y-2">
             {/* Subject filter pills */}
             <div
-              className="flex flex-wrap items-center gap-1.5"
+              className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap"
               role="group"
               aria-label="Lọc theo lĩnh vực"
             >
@@ -682,7 +696,7 @@ export function CosmicGoalPortal({
                 type="button"
                 aria-pressed={selectedSubjectId === 'all'}
                 onClick={() => handleSelectSubject('all')}
-                className={`min-h-[32px] rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-200 ${
+                className={`min-h-[36px] shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-200 ${
                   selectedSubjectId === 'all'
                     ? 'border-accent bg-accent-subtle text-accent-ink'
                     : 'border-border bg-surface text-ink-secondary hover:border-border-strong hover:text-ink'
@@ -692,17 +706,15 @@ export function CosmicGoalPortal({
               </button>
               {subjects.map(subject => {
                 const active = selectedSubjectId === subject.id;
+                const tone = subjectTones?.[subject.id] ?? 'sapphire';
                 return (
                   <button
                     key={subject.id}
                     type="button"
+                    data-discipline={tone}
                     aria-pressed={active}
                     onClick={() => handleSelectSubject(subject.id)}
-                    className={`min-h-[32px] rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-200 ${
-                      active
-                        ? 'border-accent bg-accent-subtle text-accent-ink'
-                        : 'border-border bg-surface text-ink-secondary hover:border-border-strong hover:text-ink'
-                    }`}
+                    className="hus-disc-chip min-h-[36px] shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-200"
                   >
                     {subject.title}
                   </button>
@@ -712,7 +724,7 @@ export function CosmicGoalPortal({
 
             {/* Course filter pills */}
             <div
-              className="flex flex-wrap items-center gap-1.5"
+              className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap"
               role="group"
               aria-label="Lọc theo học phần"
             >
@@ -720,7 +732,7 @@ export function CosmicGoalPortal({
                 type="button"
                 aria-pressed={selectedCourseId === 'all'}
                 onClick={() => handleSelectCourse('all')}
-                className={`min-h-[32px] rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-200 ${
+                className={`min-h-[36px] shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-200 ${
                   selectedCourseId === 'all'
                     ? 'border-starlight/60 bg-warning-subtle/80 text-ink'
                     : 'border-border bg-surface-subtle/60 text-ink-secondary hover:border-border-strong hover:text-ink'
@@ -730,17 +742,15 @@ export function CosmicGoalPortal({
               </button>
               {availableCourses.map(course => {
                 const active = selectedCourseId === course.id;
+                const tone = subjectTones?.[course.subjectId] ?? 'sapphire';
                 return (
                   <button
                     key={course.id}
                     type="button"
+                    data-discipline={tone}
                     aria-pressed={active}
                     onClick={() => handleSelectCourse(course.id)}
-                    className={`min-h-[32px] rounded-full border px-2.5 py-1 font-mono text-[11px] font-medium transition-colors duration-200 ${
-                      active
-                        ? 'border-starlight/60 bg-warning-subtle/80 text-ink'
-                        : 'border-border bg-surface-subtle/60 text-ink-secondary hover:border-border-strong hover:text-ink'
-                    }`}
+                    className="hus-disc-chip min-h-[36px] shrink-0 rounded-full border px-3 py-1 font-mono text-[11px] font-medium transition-colors duration-200"
                   >
                     {course.academicCode ?? course.id}
                   </button>
@@ -950,8 +960,14 @@ export function CosmicGoalPortal({
                                 : 'border-border bg-surface text-ink-secondary hover:border-accent/50 hover:text-ink'
                           }`}
                         >
-                          <span className="shrink-0 font-mono text-[11px]" aria-hidden="true">
-                            {station.completed ? '✓' : station.isTarget ? '★' : `${index + 1}`}
+                          <span className="inline-flex shrink-0 items-center font-mono text-[11px]" aria-hidden="true">
+                            {station.completed ? (
+                              <CheckIcon width={12} height={12} strokeWidth={2.4} />
+                            ) : station.isTarget ? (
+                              '★'
+                            ) : (
+                              `${index + 1}`
+                            )}
                           </span>
                           <span className="truncate">{station.title}</span>
                         </Link>
@@ -1006,9 +1022,10 @@ export function CosmicGoalPortal({
 
         {/* Layer 1 (Mobile / Tablet): compact horizontal orbit cards inside the cosmic box */}
         {!isGridOpen && floatingGoals.length > 0 ? (
-          <div className="relative z-10 mt-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 lg:hidden">
+          <div className="no-scrollbar relative z-10 mt-4 flex snap-x snap-mandatory gap-2.5 overflow-x-auto pb-1 lg:hidden">
             {floatingGoals.slice(0, 6).map(item => {
               const selected = selectedGoalId === item.id;
+              const tone = subjectTones?.[item.subjectId] ?? 'sapphire';
               const chapterDoneCount =
                 item.kind === 'chapter'
                   ? getChapterProgressCount(item, completedLessonSet, completedQuestSet, quests)
@@ -1024,12 +1041,13 @@ export function CosmicGoalPortal({
                   key={item.id}
                   type="button"
                   data-floating-goal="true"
+                  data-discipline={tone}
                   aria-pressed={selected}
                   onClick={() => handleSelectGoal(item)}
                   className={`flex w-[228px] shrink-0 snap-start flex-col justify-between gap-2 rounded-[var(--radius-lg)] border p-3.5 text-left transition-colors duration-200 ${
                     selected
                       ? 'border-starlight bg-warning-subtle/85 ring-1 ring-starlight/40'
-                      : 'border-border-strong/80 bg-surface/92 hover:border-accent/50'
+                      : 'hus-disc-card border-[var(--disc-border-strong)] hover:border-[var(--disc-accent)]'
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-1.5">
@@ -1041,10 +1059,18 @@ export function CosmicGoalPortal({
                       </span>
                     ) : null}
                   </div>
-                  <p className="line-clamp-2 text-xs font-semibold leading-snug text-ink">
+                  <p
+                    className={`line-clamp-2 text-xs font-semibold leading-snug ${
+                      selected ? 'text-ink' : 'text-[var(--disc-ink)]'
+                    }`}
+                  >
                     {item.title}
                   </p>
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-ink-muted">
+                  <div
+                    className={`flex items-center justify-between gap-2 text-[11px] ${
+                      selected ? 'text-ink-muted' : 'text-[var(--disc-ink-muted)]'
+                    }`}
+                  >
                     <span className="inline-flex items-center gap-1 font-mono tabular-nums">
                       <ClockIcon width={12} height={12} />
                       <span>
@@ -1053,7 +1079,7 @@ export function CosmicGoalPortal({
                           : `~${item.estimatedMinutes} phút`}
                       </span>
                     </span>
-                    <span className="font-medium text-accent">
+                    <span className={`font-medium ${selected ? 'text-accent' : 'text-[var(--disc-accent)]'}`}>
                       {item.kind === 'chapter' ? 'Học theo chương →' : 'Mở trạm →'}
                     </span>
                   </div>
@@ -1101,18 +1127,20 @@ export function CosmicGoalPortal({
                   const cardStyle: CSSProperties = {
                     animationDelay: `${Math.min(idx % PAGE_SIZE, 6) * 18}ms`,
                   };
+                  const tone = subjectTones?.[item.subjectId] ?? 'sapphire';
 
                   return (
                     <button
                       key={item.id}
                       type="button"
+                      data-discipline={tone}
                       aria-pressed={selected}
                       onClick={() => handleSelectGoal(item)}
                       style={cardStyle}
                       className={`hus-cosmic-card-settle group flex min-w-0 flex-col justify-between rounded-[var(--radius-lg)] border p-4 text-left transition-[border-color,background-color,box-shadow] duration-200 ${
                         selected
                           ? 'border-starlight bg-warning-subtle/45 ring-1 ring-starlight/40'
-                          : 'border-border bg-surface hover:border-border-strong hover:bg-surface-subtle/60'
+                          : 'hus-disc-card border-[var(--disc-border)] hover:border-[var(--disc-border-strong)]'
                       }`}
                     >
                       <div className="min-w-0 space-y-2.5">
@@ -1130,16 +1158,32 @@ export function CosmicGoalPortal({
                         </div>
 
                         <div className="min-w-0 space-y-1">
-                          <h3 className="text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent">
+                          <h3
+                            className={`text-sm font-semibold leading-snug transition-colors ${
+                              selected
+                                ? 'text-ink group-hover:text-accent'
+                                : 'text-[var(--disc-ink)] group-hover:text-[var(--disc-accent)]'
+                            }`}
+                          >
                             {item.title}
                           </h3>
-                          <p className="line-clamp-2 text-xs leading-relaxed text-ink-secondary">
+                          <p
+                            className={`line-clamp-2 text-xs leading-relaxed ${
+                              selected ? 'text-ink-secondary' : 'text-[var(--disc-ink-secondary)]'
+                            }`}
+                          >
                             {item.subtitle}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2.5 text-xs text-ink-muted">
+                      <div
+                        className={`mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs ${
+                          selected
+                            ? 'border-border/70 text-ink-muted'
+                            : 'border-[var(--disc-border)]/70 text-[var(--disc-ink-muted)]'
+                        }`}
+                      >
                         <span className="inline-flex items-center gap-1 font-mono tabular-nums">
                           <ClockIcon width={13} height={13} />
                           <span>
@@ -1148,7 +1192,7 @@ export function CosmicGoalPortal({
                               : `~${item.estimatedMinutes} phút`}
                           </span>
                         </span>
-                        <span className="font-medium text-accent">
+                        <span className={`font-medium ${selected ? 'text-accent' : 'text-[var(--disc-accent)]'}`}>
                           {selected
                             ? 'Đang xem lộ trình'
                             : item.kind === 'chapter'

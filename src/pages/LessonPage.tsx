@@ -4,6 +4,7 @@ import { resolveCourseConventionCanon } from '../content/curriculum-canons';
 import type { InjectedCodeSnippet } from '../contracts/subject-module';
 import type { CodeLanguage } from '../domain/code-lab';
 import type {
+  CoachingHistoryEntry,
   CoachingPromptMode,
   LessonWebMcpContextPacket,
   TutorCoachingFeedback,
@@ -11,16 +12,19 @@ import type {
 import type { Course, Lesson } from '../domain/learning';
 import type { MathSymbolContext } from '../domain/math-symbols';
 import type { LessonAnimationSpec } from '../domain/code-lesson';
+import type { MicroLessonCard } from '../domain/micro-lesson';
 import type { SemiEssayExercise, WrittenReasoningStep } from '../domain/semi-essay';
 import type { ExerciseDefinition } from '../domain/workspace';
 import { buildPlaygroundSnippets, inferDefaultCodeLanguage } from '../core/code-lab/playground';
+import { buildRevisionDiffContext } from '../core/learning/coaching-memory';
 import { courseLessons } from '../core/learning/content';
 import {
   buildCurriculumHorizon,
   buildGroundedEssayContextPacket,
   classifyLessonRelation,
   indexLessonMarkdownChunks,
-  searchCurriculumChunks,
+  prepareCurriculumSearchIndex,
+  searchPreparedCurriculumIndex,
   synthesizeFallbackTheoryAnchors,
 } from '../core/learning/curriculum-rag';
 import { buildNeighborhoodFlow } from '../core/learning/goal-pathway';
@@ -33,8 +37,11 @@ import {
 } from '../core/learning/webmcp-essay-adapters';
 import {
   loadStoredTutorFeedback,
+  loadStoredTutorFeedbackHistory,
   saveStoredTutorFeedback,
+  saveStoredTutorFeedbackWithHistory,
 } from '../infrastructure/ai/tutor-feedback-parser';
+import { collectExerciseInteractiveDraftSummaries } from '../infrastructure/practice/interactive-step-drafts';
 import {
   detectWebMcpSupport,
   formatLessonStudyWebMcpPrompt,
@@ -101,6 +108,13 @@ export default function LessonPage() {
   }
 
   if (!lesson) {
+    const fallbackSubjectModule = getSubjectModule(course.subjectId);
+    const fallbackCanon = resolveCourseConventionCanon({
+      courseId: course.id,
+      academicCode: course.academicCode,
+      subjectId: course.subjectId,
+      courseTitle: course.title,
+    });
     return (
       <div className="space-y-6">
         <Breadcrumbs
@@ -114,6 +128,9 @@ export default function LessonPage() {
           courseTitle={course.title}
           courseUrl={`/courses/${course.id}`}
           chapters={[]}
+          disciplineTone={fallbackSubjectModule?.visualTheme?.tone}
+          courseCode={course.academicCode ?? course.id.toUpperCase()}
+          studyGuide={fallbackCanon.studyGuide}
         >
           <h1>Bài học chưa sẵn sàng</h1>
           <p>Bài học này chưa được chuyển đổi hoặc không thuộc học phần hiện tại.</p>
@@ -342,6 +359,16 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
     });
   }, [course, lesson.id, body, extraMarkdownByLessonId]);
 
+  const preparedLessonIndex = useMemo(
+    () => prepareCurriculumSearchIndex(lessonChunks),
+    [lessonChunks],
+  );
+
+  const [activeMicroCard, setActiveMicroCard] = useState<MicroLessonCard | null>(null);
+  useEffect(() => {
+    setActiveMicroCard(null);
+  }, [lesson.id]);
+
   const [webMcpAvailable, setWebMcpAvailable] = useState<boolean>(
     () => detectWebMcpSupport().available,
   );
@@ -365,6 +392,9 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
   >({});
   const [inlineCoachingByStepId, setInlineCoachingByStepId] = useState<
     Readonly<Record<string, TutorCoachingFeedback>>
+  >({});
+  const [inlineCoachingHistoryByStepId, setInlineCoachingHistoryByStepId] = useState<
+    Readonly<Record<string, readonly CoachingHistoryEntry[]>>
   >({});
   const [inlineCoachedSnapshotByStepId, setInlineCoachedSnapshotByStepId] = useState<
     Readonly<Record<string, string>>
@@ -400,13 +430,16 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
 
   useEffect(() => {
     const merged: Record<string, TutorCoachingFeedback> = {};
+    const mergedHistory: Record<string, readonly CoachingHistoryEntry[]> = {};
     const seenIds = new Set<string>();
     for (const { exercise } of adaptedClassicByStepId.values()) {
       if (seenIds.has(exercise.id)) continue;
       seenIds.add(exercise.id);
       Object.assign(merged, loadStoredTutorFeedback(exercise));
+      Object.assign(mergedHistory, loadStoredTutorFeedbackHistory(exercise.id));
     }
     setInlineCoachingByStepId(merged);
+    setInlineCoachingHistoryByStepId(mergedHistory);
   }, [adaptedClassicByStepId]);
 
   const buildInlineEssayPacket = useCallback(
@@ -429,8 +462,22 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
           ? options.stepNumber - 1
           : semiEx.steps.findIndex(s => s.id === step.id),
       );
-      const anchors = synthesizeFallbackTheoryAnchors(lessonChunks, semiEx, stepIdx).anchors;
+      const anchors = synthesizeFallbackTheoryAnchors(
+        lessonChunks,
+        semiEx,
+        stepIdx,
+        3,
+        preparedLessonIndex,
+      ).anchors;
       const revealed = options?.modelRevealed ?? false;
+      const interactiveSummaries = collectExerciseInteractiveDraftSummaries(
+        semiEx,
+        `${semiEx.id}:`,
+      );
+      const revisionDiffContext = buildRevisionDiffContext(
+        inlineCoachingHistoryByStepId[step.id] ?? [],
+        draftText,
+      );
       return buildGroundedEssayContextPacket({
         mode,
         canon,
@@ -446,15 +493,20 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
           modelRevealed: revealed,
         },
         chunks: lessonChunks,
+        preparedIndex: preparedLessonIndex,
         effectiveTheoryAnchors: anchors,
+        ...(interactiveSummaries.length > 0
+          ? { studentInteractiveWorkSummary: interactiveSummaries }
+          : {}),
+        ...(revisionDiffContext ? { revisionDiffContext } : {}),
         internalReferenceForWebMcp: fromWebMcp && mode !== 'socratic-hint',
       });
     },
-    [lessonChunks, canon, horizon],
+    [lessonChunks, preparedLessonIndex, canon, horizon, inlineCoachingHistoryByStepId],
   );
 
   const buildLessonStudyPacket = useCallback((): LessonWebMcpContextPacket => {
-    const primaryCard = parsedMicro?.cards[0];
+    const primaryCard = activeMicroCard ?? parsedMicro?.cards[0];
     const targetEx = focusedExercise ?? lessonExercises[0];
     const exAttempts = targetEx
       ? progress.attempts.filter(a => a.exerciseId === targetEx.id)
@@ -509,6 +561,7 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
       ],
     };
   }, [
+    activeMicroCard,
     parsedMicro,
     focusedExercise,
     lessonExercises,
@@ -539,15 +592,16 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
           at: feedback.receivedAt,
         });
       }
-      setInlineCoachingByStepId(prev => {
-        const next = { ...prev, [feedback.stepId]: feedback };
-        const scoped: Record<string, TutorCoachingFeedback> = {};
-        for (const s of semiEx.steps) {
-          if (next[s.id]) scoped[s.id] = next[s.id]!;
-        }
-        saveStoredTutorFeedback(semiEx.id, scoped);
-        return next;
+      const scoped: Record<string, TutorCoachingFeedback> = {};
+      for (const s of semiEx.steps) {
+        if (nextPreview[s.id]) scoped[s.id] = nextPreview[s.id]!;
+      }
+      const savedHistory = saveStoredTutorFeedbackWithHistory(semiEx, scoped, {
+        updatedStepId: feedback.stepId,
+        draftSnapshot: snap,
       });
+      setInlineCoachingByStepId(nextPreview);
+      setInlineCoachingHistoryByStepId(prev => ({ ...prev, ...savedHistory }));
     },
     [inlineA4Drafts],
   );
@@ -567,43 +621,50 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
 
   const searchLessonCurriculum = useCallback(
     async (query: string, expandCourse: boolean) => {
-      let chunksPool = lessonChunks;
-      if (expandCourse) {
-        const earlier = lessons.filter(
-          cand =>
-            classifyLessonRelation(course, learningContent, lesson.id, cand.id) !==
-            'later-syllabus',
-        );
-        const missing = earlier.filter(item => item.id !== lesson.id && !extraMarkdownByLessonId[item.id]);
-        if (missing.length > 0) {
-          const loadedPairs = await Promise.all(
-            missing.map(async item => {
-              try {
-                const md = await loadLessonMarkdown(item.id);
-                return [item.id, md] as const;
-              } catch {
-                return null;
-              }
-            }),
-          );
-          const mergedExtra: Record<string, string> = { ...extraMarkdownByLessonId };
-          for (const pair of loadedPairs) {
-            if (pair) mergedExtra[pair[0]] = pair[1];
-          }
-          setExtraMarkdownByLessonId(mergedExtra);
-          const allMap: Record<string, string> = { ...mergedExtra };
-          if (body) allMap[lesson.id] = body;
-          chunksPool = indexLessonMarkdownChunks({
-            course,
-            content: learningContent,
-            targetLessonId: lesson.id,
-            markdownByLessonId: allMap,
-          });
-        }
+      if (!expandCourse) {
+        return searchPreparedCurriculumIndex(preparedLessonIndex, query, {
+          limit: 4,
+          allowFutureChapters: false,
+        });
       }
-      return searchCurriculumChunks(chunksPool, query, { limit: 4, allowFutureChapters: false });
+      let chunksPool = lessonChunks;
+      const earlier = lessons.filter(
+        cand =>
+          classifyLessonRelation(course, learningContent, lesson.id, cand.id) !==
+          'later-syllabus',
+      );
+      const missing = earlier.filter(item => item.id !== lesson.id && !extraMarkdownByLessonId[item.id]);
+      if (missing.length > 0) {
+        const loadedPairs = await Promise.all(
+          missing.map(async item => {
+            try {
+              const md = await loadLessonMarkdown(item.id);
+              return [item.id, md] as const;
+            } catch {
+              return null;
+            }
+          }),
+        );
+        const mergedExtra: Record<string, string> = { ...extraMarkdownByLessonId };
+        for (const pair of loadedPairs) {
+          if (pair) mergedExtra[pair[0]] = pair[1];
+        }
+        setExtraMarkdownByLessonId(mergedExtra);
+        const allMap: Record<string, string> = { ...mergedExtra };
+        if (body) allMap[lesson.id] = body;
+        chunksPool = indexLessonMarkdownChunks({
+          course,
+          content: learningContent,
+          targetLessonId: lesson.id,
+          markdownByLessonId: allMap,
+        });
+      }
+      return searchPreparedCurriculumIndex(prepareCurriculumSearchIndex(chunksPool), query, {
+        limit: 4,
+        allowFutureChapters: false,
+      });
     },
-    [lessonChunks, lessons, course, lesson.id, extraMarkdownByLessonId, body],
+    [lessonChunks, preparedLessonIndex, lessons, course, lesson.id, extraMarkdownByLessonId, body],
   );
 
   const lessonWebMcpRef = useRef({
@@ -697,6 +758,7 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
       webMcpAvailable,
       activeStepId: activeInlineA4?.step.id ?? '',
       coachingByStepId: inlineCoachingByStepId,
+      coachingHistoryByStepId: inlineCoachingHistoryByStepId,
       coachedSnapshotByStepId: inlineCoachedSnapshotByStepId,
       onActivateExerciseStep: (semiEx, step, draftText, options) => {
         setActiveInlineA4({ exercise: semiEx, step });
@@ -733,6 +795,7 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
       webMcpAvailable,
       activeInlineA4,
       inlineCoachingByStepId,
+      inlineCoachingHistoryByStepId,
       inlineCoachedSnapshotByStepId,
       buildInlineEssayPacket,
       applyInlineA4Feedback,
@@ -839,6 +902,17 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
         chapters={chapters}
         currentLessonId={lesson.id}
         outline={[]}
+        disciplineTone={subjectModule?.visualTheme?.tone}
+        courseCode={course.academicCode ?? course.id.toUpperCase()}
+        studyGuide={canon.studyGuide}
+        previousLesson={
+          previous
+            ? { title: previous.title, to: `/courses/${course.id}/lessons/${previous.id}` }
+            : undefined
+        }
+        nextLesson={
+          next ? { title: next.title, to: `/courses/${course.id}/lessons/${next.id}` } : undefined
+        }
       >
         {/* Lesson context bar */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
@@ -1301,6 +1375,7 @@ function LessonReader({ course, lesson }: { readonly course: Course; readonly le
                 practiceLabUrl={practiceLabUrl}
                 onJumpToCodeLab={LazyInlineCodeLab ? scrollToInlineCodeLab : undefined}
                 isLessonCompleted={completed}
+                onActiveCardChange={setActiveMicroCard}
                 onCompleteLesson={() => {
                   if (!explicitlyCompleted) {
                     progressStore.dispatch({

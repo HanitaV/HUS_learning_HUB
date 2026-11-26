@@ -1,5 +1,19 @@
 # Agent handoff
 
+## Sync WebMCP Waves 1–3, Quad-Discipline Brand Identity, Mobile-First Drawer & Concise Exam Scaffold from `main` — 2026-11-26 (Antigravity)
+
+Synced all latest platform upgrades from `main` (`cfac129`) onto the clean `template` branch (`public/template` on `https://github.com/HanitaV/HUS_learning_HUB.git`) while keeping zero proprietary course content or private Origin Trial tokens:
+
+- **WebMCP Ecosystem Waves 1–3 (`src/core/{learning,code-lab}/*`, `src/infrastructure/{ai,progress}/*`, `src/app/use{ExamWebMcpBridge,WebMcpActivity}.ts`, `src/pages/{ExamPracticePage,ChapterExamPage,ProgressPage,SettingsPage}.tsx`)**:
+  - Synced Graph-RAG BM25 index caching, owner-stack WebMCP coordinator, `hus_submit_exam_batch_coaching`, per-step revision history & diff timelines (`coaching-memory.ts`), cross-step interactive diagram summaries (`interactive-draft-summary.ts`), Mistake & Convention Ledger (`study-diagnostics.ts`, `hus_get_study_diagnostics`, `hus_launch_targeted_drill`), `v2` Study Archive (`study-archive.ts`), 3-mode NotebookLM exports, `CodeLabWorkspace` Socratic debug coaching, Declarative HTML WebMCP `<form toolname="...">` attributes, and the non-mutating 10-tool WebMCP Dry-Run console on `SettingsPage`.
+  - Preserved `template`'s generic `https://your-domain.example` placeholder in `webmcp-essay-bridge.ts`, empty `COURSE_CONVENTION_CANONS = {}` (adding `concise-equation-chain` `"Biến đổi dòng ngắn gọn (chuẩn đáp án thi)"` to `DEFAULT_REASONING_SCAFFOLDS`), and clean zero-course empty states on `CataloguePage` & `ExamPracticePage`.
+- **Quad-Discipline Brand System, Universal `☰` Drawer, Study Method Banner & Mobile-First Ergonomics (`src/components/ui/BrandIdentity.tsx`, `src/components/learning/CourseStudyGuideBanner.tsx`, `src/app/layouts/AppLayout.tsx`, `DESIGN.md`, `public/favicon.svg`, `src/styles/index.css`)**:
+  - Synced `SubjectVisualTheme` (`sapphire | emerald | amber | violet`), `HusBrandCrest`, checkable color-coded subject/course/chapter tiles, universal `☰` corner curriculum drawer on desktop & mobile, `CourseStudyGuideBanner`, and thumb-zone mobile bottom navigation (removing the blocking `SmallScreenNoticeModal` interruption).
+- **Verification**:
+  - Verified on `template` with `npm run build` (`tsc --noEmit` + Vitest + Vite production `dist/`) and `npm run test:e2e` (Desktop & Mobile Chromium, zero horizontal overflow `360px`–`1440px`).
+
+---
+
 ## Sync Exam Workbench, Inline Multi-Step Labs, `<ProblemFigure />`, Realtime KaTeX A4 & Dual-Path WebMCP from `main` — 2026-11-25 (Antigravity)
 
 Synced all latest platform capabilities from `main` (`abc7cb0`) onto the clean `template` branch (`public/template` on `https://github.com/HanitaV/HUS_learning_HUB.git`) while preserving zero course/private content:

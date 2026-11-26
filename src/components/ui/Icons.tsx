@@ -320,3 +320,22 @@ export function ClipboardCheckIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function CompassIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <circle cx="12" cy="12" r="9" />
+      <polygon points="15.5 8.5 13.4 13.4 8.5 15.5 10.6 10.6 15.5 8.5" />
+    </svg>
+  );
+}
+
+export function SparkLightbulbIcon(props: IconProps) {
+  return (
+    <svg {...baseProps(props)}>
+      <path d="M9 18h6" />
+      <path d="M10 21h4" />
+      <path d="M8.6 14.5A6 6 0 1 1 15.4 14.5c-.7.6-1.2 1.4-1.4 2.3h-4c-.2-.9-.7-1.7-1.4-2.3Z" />
+    </svg>
+  );
+}

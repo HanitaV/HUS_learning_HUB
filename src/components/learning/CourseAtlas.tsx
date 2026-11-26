@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import type { DisciplineTone } from '../../contracts/subject-module';
 import type { Course, EntityId } from '../../domain/learning';
 import type { SemiEssayExercise } from '../../domain/semi-essay';
 import type { SkillQuest } from '../../domain/skill-quest';
@@ -9,18 +10,21 @@ import { normalizeVietnamese } from '../../core/courses/search';
 import { courseLessons } from '../../core/learning/content';
 import { completedCourseLessonIds, isPracticeOnlyCourse } from '../../core/learning/progress';
 import { Badge } from '../ui/Badge';
+import { SelectableCheckIndicator } from '../ui/BrandIdentity';
 import { CourseDependencyGraph } from './CourseDependencyGraph';
 import {
   ArrowRightIcon,
   CheckCircleIcon,
   ChevronRightIcon,
   CloseIcon,
+  CompassIcon,
   SearchIcon,
 } from '../ui/Icons';
 
 export interface CourseAtlasProps {
   readonly course: Course;
   readonly content: LearningContent;
+  readonly disciplineTone?: DisciplineTone | undefined;
   readonly courseQuests?: readonly SkillQuest[] | undefined;
   readonly completedQuestIds?: readonly EntityId[] | undefined;
   readonly writtenExercises?: readonly SemiEssayExercise[] | undefined;
@@ -33,12 +37,13 @@ type AtlasView = 'graph' | 'list';
  * Universal Atmospheric Observatory Course Atlas:
  * - Default `graph` view renders a left-to-right topological dependency graph (`CourseDependencyGraph`)
  *   showing both chapter-level and lesson-level prerequisite/progression flow with 4-milestone quests.
- * - `list` view renders an airy chapter constellation ribbon + open star-thread lesson stream.
+ * - `list` view renders an airy chapter constellation ribbon + 2-column color-accented lesson card grid.
  * - Scales cleanly across every VNU-HUS subject from 0 chapters (metadata-only) to 5–100+ lessons.
  */
 export function CourseAtlas({
   course,
   content,
+  disciplineTone,
   courseQuests,
   completedQuestIds,
   writtenExercises,
@@ -395,44 +400,44 @@ export function CourseAtlas({
                     key={item.chapter.id}
                     type="button"
                     aria-pressed={isSelected}
+                    data-discipline={disciplineTone ?? 'sapphire'}
                     onClick={() =>
                       setSelectedChapterId(prev =>
                         prev === item.chapter.id ? null : item.chapter.id,
                       )
                     }
-                    className={`group relative flex flex-col justify-between rounded-[var(--radius-lg)] border px-4 py-3 text-left backdrop-blur-sm transition-[transform,border-color,background-color] duration-200 hover:-translate-y-0.5 active:scale-[0.99] ${
-                      isSelected
-                        ? 'border-accent bg-accent-subtle/65'
-                        : 'border-border bg-surface/85 hover:border-border-strong hover:bg-surface'
-                    }`}
+                    className="hus-disc-tile group relative flex flex-col justify-between rounded-[var(--radius-lg)] border px-4 py-3 text-left backdrop-blur-sm transition-[transform,border-color,background-color,box-shadow] duration-200 hover:-translate-y-0.5 active:scale-[0.99]"
                   >
                     <div className="w-full space-y-1.5">
                       <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="inline-flex items-center gap-2 font-mono font-medium text-ink-muted">
+                        <span className="inline-flex items-center gap-2 font-mono font-medium text-[var(--disc-ink-muted)]">
                           <span
                             aria-hidden="true"
                             className={`h-2 w-2 rounded-full transition-transform duration-200 group-hover:scale-125 ${
                               isComplete
                                 ? 'bg-success'
                                 : isSelected || containsNext
-                                  ? 'bg-accent'
-                                  : 'bg-border-strong'
+                                  ? 'bg-[var(--disc-accent)]'
+                                  : 'bg-[var(--disc-border-strong)]'
                             }`}
                           />
-                          <span className={isSelected ? 'text-accent-ink' : undefined}>
+                          <span className={isSelected ? 'font-semibold text-[var(--disc-accent)]' : undefined}>
                             Chương {item.index + 1}
                           </span>
                         </span>
-                        <span className="font-mono tabular-nums text-ink-muted">
-                          {item.completedCount}/{item.lessons.length} bài
+                        <span className="inline-flex items-center gap-2 font-mono tabular-nums text-[var(--disc-ink-muted)]">
+                          <span>
+                            {item.completedCount}/{item.lessons.length} bài
+                          </span>
+                          <SelectableCheckIndicator checked={isSelected} tone={disciplineTone} />
                         </span>
                       </div>
 
                       <span
                         className={`block font-display text-[15px] font-medium leading-snug transition-colors ${
                           isSelected
-                            ? 'text-accent-ink'
-                            : 'text-ink group-hover:text-accent'
+                            ? 'text-[var(--disc-ink)]'
+                            : 'text-[var(--disc-ink)] group-hover:text-[var(--disc-accent)]'
                         }`}
                       >
                         {item.chapter.title}
@@ -442,11 +447,11 @@ export function CourseAtlas({
                     {/* Delicate horizon progress thread */}
                     <div
                       aria-hidden="true"
-                      className="mt-2.5 h-[2px] w-full overflow-hidden rounded-full bg-border/75"
+                      className="mt-2.5 h-[2px] w-full overflow-hidden rounded-full bg-[var(--disc-border)]/75"
                     >
                       <div
                         className={`h-full rounded-full transition-all duration-300 ${
-                          isComplete ? 'bg-success' : 'bg-accent'
+                          isComplete ? 'bg-success' : 'bg-[var(--disc-solid)]'
                         }`}
                         style={{
                           width: `${chapterPct > 0 ? Math.max(chapterPct, 6) : isSelected ? 24 : 0}%`,
@@ -592,14 +597,8 @@ export function CourseAtlas({
                       </div>
                     </div>
 
-                    {/* Floating Star-Thread Lesson Stream */}
-                    <ol className="relative space-y-1.5 pl-6 sm:pl-8">
-                      {/* Delicate vertical celestial star-thread */}
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute bottom-5 left-[0.55rem] top-5 w-px bg-gradient-to-b from-orbit-strong via-border to-orbit sm:left-[0.8rem]"
-                      />
-
+                    {/* 2-Column Color-Accented Topic/Lesson Card Grid */}
+                    <ol className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       {item.lessons.map(({ lesson, prereqTopics }, lIdx) => {
                         const isCompleted = isLessonMastered(lesson.id);
                         const lessonQuests = questsByLessonId.get(lesson.id) ?? [];
@@ -611,73 +610,66 @@ export function CourseAtlas({
                         const isHovered = hoveredLessonId === lesson.id;
 
                         return (
-                          <li key={lesson.id} className="relative">
-                            {/* Celestial Star-Node aligned on the vertical thread */}
-                            <span
-                              aria-hidden="true"
-                              className={`pointer-events-none absolute -left-6 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border transition-all duration-200 sm:-left-8 ${
-                                isCompleted
-                                  ? 'border-success/45 bg-success-subtle text-success'
-                                  : isPrereqHighlighted
-                                    ? 'scale-110 border-starlight bg-surface text-warning ring-4 ring-starlight/15'
-                                    : isHovered || isNext
-                                      ? 'scale-110 border-accent bg-accent-solid text-white ring-4 ring-accent/15'
-                                      : 'border-border-strong bg-surface text-ink-muted'
-                              }`}
+                          <li
+                            key={lesson.id}
+                            data-discipline={disciplineTone ?? 'sapphire'}
+                            className={`flex min-w-0 flex-col justify-between gap-2.5 rounded-[var(--radius-xl)] border p-3.5 transition-[transform,background-color,border-color,box-shadow] duration-200 hover:-translate-y-0.5 ${
+                              isPrereqHighlighted
+                                ? 'hus-disc-card border-starlight/60'
+                                : isNext
+                                  ? 'hus-disc-card border-[var(--disc-border-strong)]'
+                                  : isCompleted
+                                    ? 'border-success/35 bg-surface hover:border-success/60'
+                                    : 'border-border bg-surface hover:border-[var(--disc-border-strong)]'
+                            }`}
+                          >
+                            <Link
+                              to={`/courses/${course.id}/lessons/${lesson.id}`}
+                              aria-label={lesson.title}
+                              onMouseEnter={() => setHoveredLessonId(lesson.id)}
+                              onMouseLeave={() =>
+                                setHoveredLessonId(prev => (prev === lesson.id ? null : prev))
+                              }
+                              onFocus={() => setHoveredLessonId(lesson.id)}
+                              onBlur={() =>
+                                setHoveredLessonId(prev => (prev === lesson.id ? null : prev))
+                              }
+                              className="group flex flex-1 flex-col justify-between gap-3 no-underline"
                             >
-                              {isCompleted ? (
-                                <CheckCircleIcon width={13} height={13} />
-                              ) : (
-                                <span className="font-mono text-[10px] font-semibold leading-none">
-                                  {lIdx + 1}
-                                </span>
-                              )}
-                            </span>
-
-                            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-                              <Link
-                                to={`/courses/${course.id}/lessons/${lesson.id}`}
-                                aria-label={lesson.title}
-                                onMouseEnter={() => setHoveredLessonId(lesson.id)}
-                                onMouseLeave={() =>
-                                  setHoveredLessonId(prev => (prev === lesson.id ? null : prev))
-                                }
-                                onFocus={() => setHoveredLessonId(lesson.id)}
-                                onBlur={() =>
-                                  setHoveredLessonId(prev => (prev === lesson.id ? null : prev))
-                                }
-                                className={`group flex min-h-[56px] flex-1 items-center justify-between gap-4 rounded-[var(--radius-lg)] border px-4 py-3 no-underline transition-[transform,background-color,border-color] duration-200 hover:-translate-y-0.5 ${
-                                  isPrereqHighlighted
-                                    ? 'border-starlight/50 bg-surface'
-                                    : isNext
-                                      ? 'border-accent/35 bg-surface/95 hover:border-accent/60'
-                                      : 'border-transparent bg-surface/55 hover:border-border-strong hover:bg-surface'
-                                }`}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                                    <span className="font-mono text-xs text-ink-muted">
-                                      Bài {item.index + 1}.{lIdx + 1}
-                                    </span>
-                                    <span className="text-[15px] font-medium leading-snug text-ink transition-colors group-hover:text-accent">
-                                      {lesson.title}
-                                    </span>
-                                  </div>
-
-                                  {prereqTopics.length > 0 ? (
-                                    <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-                                      Nền tảng: {prereqTopics.map(p => p.title).join(' · ')}
-                                    </p>
-                                  ) : null}
-                                </div>
-
-                                <div className="flex shrink-0 items-center gap-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <span
+                                    aria-hidden="true"
+                                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all duration-200 ${
+                                      isCompleted
+                                        ? 'border-success/45 bg-success-subtle text-success'
+                                        : isPrereqHighlighted
+                                          ? 'border-starlight bg-surface text-warning'
+                                          : isHovered || isNext
+                                            ? 'border-transparent bg-[var(--disc-solid)] text-white'
+                                            : 'border-[var(--disc-border-strong)] bg-[var(--disc-surface)] text-[var(--disc-accent)]'
+                                    }`}
+                                  >
+                                    {isCompleted ? (
+                                      <CheckCircleIcon width={12} height={12} />
+                                    ) : (
+                                      <span className="font-mono text-[10px] font-semibold leading-none">
+                                        {lIdx + 1}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="font-mono text-xs text-ink-muted">
+                                    Bài {item.index + 1}.{lIdx + 1}
+                                  </span>
+                                  {isNext ? <Badge tone="accent">Tiếp theo</Badge> : null}
                                   {isPrereqHighlighted ? (
-                                    <span className="hidden rounded-full border border-starlight/40 bg-warning-subtle px-2.5 py-0.5 text-xs font-medium text-warning sm:inline">
+                                    <span className="rounded-full border border-starlight/40 bg-warning-subtle px-2 py-0.5 text-[11px] font-medium text-warning">
                                       Kiến thức nền
                                     </span>
                                   ) : null}
-                                  {isNext ? <Badge tone="accent">Tiếp theo</Badge> : null}
+                                </div>
+
+                                <div className="flex shrink-0 items-center gap-1.5">
                                   {lesson.exerciseIds.length > 0 ? (
                                     <span className="rounded-[var(--radius-sm)] border border-border bg-canvas/80 px-2 py-0.5 font-mono text-xs text-ink-muted">
                                       <span className="sm:hidden">{lesson.exerciseIds.length} BT</span>
@@ -689,31 +681,47 @@ export function CourseAtlas({
                                   <ChevronRightIcon
                                     width={15}
                                     height={15}
-                                    className="text-ink-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-accent"
+                                    className="text-ink-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-[var(--disc-accent)]"
                                   />
                                 </div>
-                              </Link>
+                              </div>
 
-                              {primaryWritten ? (
-                                <Link
-                                  to={`/courses/${course.id}/lessons/${lesson.id}/practice/${primaryWritten.id}`}
-                                  aria-label={`Tự luận giấy A4: ${primaryWritten.title}`}
-                                  className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-accent/45 bg-accent-subtle px-3 py-1.5 font-mono text-xs font-semibold text-accent-ink no-underline transition-colors hover:border-accent sm:self-center"
-                                >
-                                  <span>Tự luận A4</span>
-                                </Link>
-                              ) : null}
+                              <div className="min-w-0">
+                                <span className="block text-[15px] font-medium leading-snug text-ink transition-colors group-hover:text-[var(--disc-accent)]">
+                                  {lesson.title}
+                                </span>
+                                {prereqTopics.length > 0 ? (
+                                  <p className="mt-1 text-xs leading-relaxed text-ink-muted">
+                                    Nền tảng: {prereqTopics.map(p => p.title).join(' · ')}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </Link>
 
-                              {primaryQuest ? (
-                                <Link
-                                  to={`/quests/${primaryQuest.id}`}
-                                  aria-label={`Nhiệm vụ 4 mốc: ${primaryQuest.title}`}
-                                  className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-starlight/55 bg-warning-subtle px-3 py-1.5 font-mono text-xs font-semibold text-warning no-underline transition-colors hover:border-starlight hover:bg-warning-subtle/90 sm:self-center"
-                                >
-                                  <span>⚡ Nhiệm vụ 4 mốc</span>
-                                </Link>
-                              ) : null}
-                            </div>
+                            {primaryWritten || primaryQuest ? (
+                              <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-2.5">
+                                {primaryWritten ? (
+                                  <Link
+                                    to={`/courses/${course.id}/lessons/${lesson.id}/practice/${primaryWritten.id}`}
+                                    aria-label={`Tự luận giấy A4: ${primaryWritten.title}`}
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-accent/45 bg-accent-subtle px-3 py-1 font-mono text-xs font-semibold text-accent-ink no-underline transition-colors hover:border-accent"
+                                  >
+                                    <span>Tự luận A4</span>
+                                  </Link>
+                                ) : null}
+
+                                {primaryQuest ? (
+                                  <Link
+                                    to={`/quests/${primaryQuest.id}`}
+                                    aria-label={`Nhiệm vụ 4 mốc: ${primaryQuest.title}`}
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-starlight/55 bg-warning-subtle px-3 py-1 font-mono text-xs font-semibold text-warning no-underline transition-colors hover:border-starlight hover:bg-warning-subtle/90"
+                                  >
+                                    <CompassIcon width={12} height={12} />
+                                    <span>Nhiệm vụ 4 mốc</span>
+                                  </Link>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </li>
                         );
                       })}
@@ -721,7 +729,7 @@ export function CourseAtlas({
 
                     {/* End-of-Chapter Exam Bar (3-10 questions) */}
                     {!normalizedQuery ? (
-                      <div className="ml-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-accent/30 bg-surface/90 px-4 py-3 sm:ml-8">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-accent/30 bg-surface/90 px-4 py-3">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <Badge tone="accent" mono>
                             Tổng kết Chương {item.index + 1}

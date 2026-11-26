@@ -10,6 +10,8 @@ import { CloseIcon, SearchIcon } from './Icons';
 
 export interface SearchInputProps {
   readonly id?: string;
+  readonly name?: string;
+  readonly toolparamdescription?: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
@@ -20,6 +22,8 @@ export interface SearchInputProps {
 
 export function SearchInput({
   id,
+  name,
+  toolparamdescription,
   value,
   onChange,
   onKeyDown,
@@ -77,6 +81,8 @@ export function SearchInput({
       <input
         ref={inputRef}
         id={id}
+        name={name}
+        toolparamdescription={toolparamdescription}
         type="search"
         value={draftValue}
         onChange={handleChange}
@@ -85,7 +91,7 @@ export function SearchInput({
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={label}
-        className="min-h-[40px] w-full rounded-[var(--radius-md)] border border-border bg-surface py-2 pl-9 pr-9 text-sm text-ink placeholder:text-ink-muted transition-[border-color,background-color] duration-300 ease-[var(--hus-ease)] hover:border-border-strong focus:border-accent focus:outline-none"
+        className="min-h-[44px] w-full rounded-[var(--radius-md)] border border-border bg-surface py-2 pl-9 pr-9 text-base text-ink placeholder:text-ink-muted transition-[border-color,background-color] duration-300 ease-[var(--hus-ease)] hover:border-border-strong focus:border-accent focus:outline-none sm:min-h-[40px] sm:text-sm"
       />
       {draftValue.length > 0 ? (
         <button

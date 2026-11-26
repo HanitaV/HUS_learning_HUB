@@ -63,5 +63,11 @@ All fonts are self-hosted locally in `src/assets/fonts/` with full Vietnamese di
 
 ## Shell & Component Grammar
 
-- **Navigation**: Floating translucent rounded top bar (`rounded-xl`, `backdrop-blur-xl`, full-perimeter border) with custom astrolabe HUS brand emblem, `/` global search shortcut, theme toggle, and full-height blurred mobile drawer with staggered link entrance.
-- **Surfaces**: Full-perimeter hairline borders paired with hue-tinted soft shadows (`.hus-card-surface`), never single-sided card borders or eyebrow kickers above headings.
+- **Brand Identity (`HusBrandCrest` & `DisciplineEmblem`)**: Quad-discipline natural-science astrolabe seal (`#0e2147` nocturnal core, architectural `H` meridian, and 4 orbital discipline nodes for Mathematics, Physics, Chemistry, and Computer Science) across the header, spotlight colophon, footer, and `public/favicon.svg`.
+- **Quad-Discipline Color System (`[data-discipline]`)**: WCAG 2.2 AA (`>= 5.1:1`) hue-tinted surfaces, borders, checkable selection tiles (`.hus-disc-tile`), and cards (`.hus-disc-card`) declared via `SubjectModule.visualTheme` with zero subject-name branching:
+  - `sapphire` (Khoa học máy tính): `#f0f6ff` / `#101c33` surface, `#164ec9` / `#85b8ff` accent.
+  - `emerald` (Hóa học): `#edf9f5` / `#0d221d` surface, `#0b6b52` / `#5eead4` accent.
+  - `amber` (Vật lý): `#fef6ec` / `#23190e` surface, `#9a4806` / `#fcd377` accent.
+  - `violet` (Toán học): `#f4f1fe` / `#191530` surface, `#5135c4` / `#bfb0ff` accent.
+- **Navigation & Mobile Ergonomics**: Floating translucent top bar with universal `☰` slide-over curriculum tree drawer (`Mở thanh điều hướng` on both mobile and desktop, housing the full Subject → Course → Chapter → Lesson tree with instant filtering), thumb-zone mobile bottom tab bar (`md:hidden`), and slide-over lesson syllabus drawer + mobile prev/next/outline quick-bar on `LessonPage`.
+- **Surfaces**: Full-perimeter hairline borders paired with hue-tinted soft shadows (`.hus-card-surface` / `.hus-disc-card`), never single-sided card borders or eyebrow kickers above headings.

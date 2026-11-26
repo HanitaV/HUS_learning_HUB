@@ -7,6 +7,7 @@ import {
 } from '../app/route-transition';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { useQuestProgress } from '../app/useQuestProgress';
+import type { DisciplineTone } from '../contracts/subject-module';
 import type { EntityId } from '../domain/learning';
 import { courseLessons } from '../core/learning/content';
 import {
@@ -14,6 +15,7 @@ import {
   courseEffectiveProgress,
   effectiveCompletedLessonIds,
 } from '../core/learning/progress';
+import { resolveCourseConventionCanon } from '../content/curriculum-canons';
 import { learningContent } from '../infrastructure/content/learning';
 import { skillQuestList } from '../infrastructure/quests/registry';
 import { filterCourses, getCourseSubject, groupCoursesBySubject } from '../core/courses/search';
@@ -25,6 +27,11 @@ import {
 import { CourseCard } from '../components/courses/CourseCard';
 import { CosmicGoalPortal } from '../components/goals/CosmicGoalPortal';
 import { Badge } from '../components/ui/Badge';
+import {
+  DisciplineEmblem,
+  HusBrandCrest,
+  SelectableCheckIndicator,
+} from '../components/ui/BrandIdentity';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ObservatoryCanvas } from '../components/ui/ObservatoryCanvas';
 import { ScrollReveal } from '../components/ui/ScrollReveal';
@@ -38,38 +45,6 @@ import {
   ClockIcon,
 } from '../components/ui/Icons';
 
-/** Pure geometric orbital mark indexed by position (no subject-name branching). */
-function ConstellationGlyph({ index }: { readonly index: number }) {
-  const rotation = (index * 37 - 22) % 180;
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 40 40"
-      fill="none"
-      className="h-9 w-9 shrink-0 text-accent"
-    >
-      <circle cx="20" cy="20" r="16" stroke="currentColor" strokeOpacity="0.2" strokeWidth="1" />
-      <ellipse
-        cx="20"
-        cy="20"
-        rx="16"
-        ry="6.5"
-        transform={`rotate(${rotation} 20 20)`}
-        stroke="currentColor"
-        strokeOpacity="0.6"
-        strokeWidth="1.2"
-      />
-      <circle cx="20" cy="20" r="2.2" fill="currentColor" />
-      <circle
-        cx={20 + Math.round(Math.cos((rotation * Math.PI) / 180) * 14)}
-        cy={20 + Math.round(Math.sin((rotation * Math.PI) / 180) * 14)}
-        r="2"
-        fill="var(--hus-starlight)"
-      />
-    </svg>
-  );
-}
-
 export default function CataloguePage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
@@ -81,6 +56,14 @@ export default function CataloguePage() {
   const { progress } = useLearningProgress();
   const { questProgress } = useQuestProgress();
   const allCourses = courseRegistry.list();
+
+  const subjectTones = useMemo<Readonly<Record<EntityId, DisciplineTone>>>(() => {
+    const map: Record<EntityId, DisciplineTone> = {};
+    for (const subject of subjectList) {
+      map[subject.id] = getSubjectModule(subject.id)?.visualTheme?.tone ?? 'sapphire';
+    }
+    return map;
+  }, []);
 
   const activeBackdrop = useMemo(
     () =>
@@ -214,13 +197,13 @@ export default function CataloguePage() {
   };
 
   return (
-    <div className="space-y-12 sm:space-y-16">
+    <div className="space-y-9 sm:space-y-16">
       {/* First Viewport: Full-Bleed Edge-to-Edge Atomic Electron Sky + Cosmic Goal Centerpiece */}
       <section
         ref={heroSectionRef}
         onPointerMove={handleHeroPointerMove}
         onPointerLeave={handleHeroPointerLeave}
-        className="relative isolate w-full space-y-6 overflow-x-clip px-4 py-3 sm:space-y-8 sm:px-6 sm:py-5 lg:px-10"
+        className="relative isolate w-full space-y-5 overflow-x-clip px-4 py-2.5 sm:space-y-8 sm:px-6 sm:py-5 lg:px-10"
       >
         <ObservatoryCanvas backdrop={activeBackdrop} />
 
@@ -288,6 +271,7 @@ export default function CataloguePage() {
             quests={skillQuestList}
             completedLessonIds={effectiveCompletedIds}
             completedQuestIds={questProgress.completedQuestIds}
+            subjectTones={subjectTones}
             onActiveSubjectChange={handleActiveSubjectChange}
           />
         </div>
@@ -337,7 +321,7 @@ export default function CataloguePage() {
         </aside>
       </section>
 
-      <div className="mx-auto w-full max-w-6xl space-y-12 px-4 sm:space-y-16 sm:px-6">
+      <div className="mx-auto w-full max-w-6xl space-y-9 px-4 sm:space-y-16 sm:px-6">
         {/* Personalized Continue Learning OR Asymmetric Observatory Spotlight */}
         <ScrollReveal>
         {primaryRecent ? (
@@ -466,9 +450,17 @@ export default function CataloguePage() {
               {/* Secondary observatory principles / local-first privacy card */}
               <div className="flex flex-col justify-between rounded-[var(--radius-xl)] border border-border bg-surface-subtle/65 p-6 sm:p-8 lg:col-span-5">
                 <div className="space-y-3">
-                  <h3 className="font-display text-2xl font-medium text-ink">
-                    Cục bộ, minh bạch và không xao nhãng
-                  </h3>
+                  <div className="flex items-start gap-3.5">
+                    <HusBrandCrest size="md" />
+                    <div className="min-w-0">
+                      <h3 className="font-display text-2xl font-medium leading-snug text-ink">
+                        Cục bộ, minh bạch và không xao nhãng
+                      </h3>
+                      <p className="mt-0.5 text-xs font-medium text-ink-muted">
+                        Toán · Lý · Hóa · Tin · ĐHKHTN
+                      </p>
+                    </div>
+                  </div>
                   <p className="text-sm leading-relaxed text-ink-secondary">
                     Mọi tiến độ chặng học, mốc nhiệm vụ 4 bước và lượt kiểm chứng bài tập đều được
                     lưu trực tiếp trên trình duyệt của bạn, có thể xuất và khôi phục bằng tệp JSON
@@ -527,14 +519,31 @@ export default function CataloguePage() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <SearchInput
-                id="dashboard-course-search"
-                value={search}
-                onChange={setSearch}
-                placeholder="Tìm theo mã học phần, tên môn…"
-                label="Tìm nhanh học phần"
+              <form
+                toolname="hus_search_catalogue"
+                tooldescription="Lọc danh mục học phần ĐHKHTN theo mã môn (MAT3504, PHY1100, CHE1080...) hoặc tên môn học"
+                toolautosubmit=""
+                onSubmit={event => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const rawQuery = data.get('query');
+                  if (typeof rawQuery === 'string') {
+                    setSearch(rawQuery);
+                  }
+                }}
                 className="w-full md:w-80"
-              />
+              >
+                <SearchInput
+                  id="dashboard-course-search"
+                  name="query"
+                  toolparamdescription="Từ khóa mã học phần hoặc tên môn học cần tìm trong danh mục"
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Tìm theo mã học phần, tên môn…"
+                  label="Tìm nhanh học phần"
+                  className="w-full max-sm:[&_input]:text-base"
+                />
+              </form>
               <Link
                 to="/courses"
                 onMouseEnter={() => void preloadCoursesPage()}
@@ -552,54 +561,44 @@ export default function CataloguePage() {
           <div
             role="group"
             aria-label="Lĩnh vực môn học"
-            className="grid grid-cols-1 gap-3.5 md:grid-cols-3"
+            className="grid grid-cols-2 gap-2.5 sm:gap-3.5 lg:grid-cols-4"
           >
-            {subjectGroups.map(({ subject, courses }, index) => {
-              const availableCount = courses.filter(c => c.status === 'available').length;
+            {subjectGroups.map(({ subject, courses }) => {
+              const visualTheme = getSubjectModule(subject.id)?.visualTheme;
+              const tone = visualTheme?.tone ?? 'sapphire';
               const isSelected = selectedSubject === subject.id;
               return (
                 <button
                   key={subject.id}
                   type="button"
+                  data-discipline={tone}
                   onClick={() =>
                     setSelectedSubject(prev => (prev === subject.id ? 'all' : subject.id))
                   }
                   aria-pressed={isSelected}
-                  className={`group hus-card-surface flex flex-col justify-between rounded-[var(--radius-xl)] border p-5 text-left transition-[border-color,transform,background-color,box-shadow] duration-300 ease-[var(--hus-ease)] hover:-translate-y-0.5 active:scale-[0.99] ${
-                    isSelected
-                      ? 'border-accent bg-accent-subtle/40 shadow-[0_8px_24px_-14px_rgb(26_86_219/0.35)]'
-                      : 'border-border bg-surface hover:border-border-strong'
-                  }`}
+                  className="group hus-disc-tile flex min-w-0 flex-col justify-between rounded-[var(--radius-xl)] border p-3.5 text-left transition-[border-color,transform,background-color,box-shadow] duration-300 ease-[var(--hus-ease)] hover:-translate-y-0.5 active:scale-[0.99] sm:p-4.5"
                 >
-                  <div className="flex w-full items-start justify-between gap-4">
-                    <ConstellationGlyph index={index} />
-                    <span className="font-mono text-xs tabular-nums text-ink-muted">
-                      {courses.length} học phần
-                    </span>
+                  <div className="flex w-full items-start justify-between gap-2">
+                    <DisciplineEmblem kind={visualTheme?.emblemKind} tone={tone} size="sm" />
+                    <SelectableCheckIndicator checked={isSelected} tone={tone} />
                   </div>
 
-                  <div className="mt-4 space-y-1">
-                    <h3
-                      className={`font-display text-xl font-medium transition-colors duration-300 ease-[var(--hus-ease)] ${
-                        isSelected ? 'text-accent' : 'text-ink group-hover:text-accent'
-                      }`}
-                    >
+                  <div className="mt-3 space-y-1">
+                    <h3 className="font-display text-base font-medium leading-snug text-[var(--disc-ink)] sm:text-lg">
                       {subject.title}
                     </h3>
-                    <p className="text-xs text-ink-muted">
-                      {availableCount > 0
-                        ? `${availableCount} học phần có bài giảng trực tuyến`
-                        : 'Thông tin học phần và nguồn gốc xác minh'}
-                    </p>
+                    {visualTheme?.focusSummary ? (
+                      <p className="hidden text-xs leading-snug text-[var(--disc-ink-secondary)] sm:block">
+                        {visualTheme.focusSummary}
+                      </p>
+                    ) : null}
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between text-xs font-medium text-accent">
-                    <span>{isSelected ? 'Đang lọc · Bấm để xem tất cả' : 'Lọc theo lĩnh vực'}</span>
-                    <ChevronRightIcon
-                      width={14}
-                      height={14}
-                      className="transition-transform duration-300 ease-[var(--hus-ease)] group-hover:translate-x-0.5"
-                    />
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-1 text-[11px] font-medium text-[var(--disc-accent)] sm:text-xs">
+                    <span className="font-mono tabular-nums text-[var(--disc-ink-muted)]">
+                      {courses.length} học phần
+                    </span>
+                    <span>{isSelected ? 'Đã chọn' : 'Tích chọn'}</span>
                   </div>
                 </button>
               );
@@ -609,7 +608,7 @@ export default function CataloguePage() {
           {filteredCourses.length > 0 ? (
             <div
               key={selectedSubject}
-              className="hus-content-swap hus-card-surface overflow-hidden divide-y divide-border rounded-[var(--radius-xl)] border border-border bg-surface"
+              className="hus-content-swap grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3"
             >
               {filteredCourses.map(course => {
                 const lessons = courseLessons(learningContent, course);
@@ -617,14 +616,24 @@ export default function CataloguePage() {
                   lessons.length > 0
                     ? courseEffectiveProgress(course, lessons, progress)
                     : undefined;
+                const tone = subjectTones[course.subjectId] ?? 'sapphire';
+                const canon = resolveCourseConventionCanon({
+                  courseId: course.id,
+                  academicCode: course.academicCode,
+                  subjectId: course.subjectId,
+                  courseTitle: course.title,
+                });
                 return (
                   <CourseCard
                     key={course.id}
                     course={course}
                     subject={getCourseSubject(course, subjectList)}
-                    layout="list"
+                    layout="grid"
                     lessonCount={lessons.length}
                     progressPercent={pct}
+                    disciplineTone={tone}
+                    studyBadge={canon.studyGuide?.badgeLabel}
+                    studyHeadline={canon.studyGuide?.headline}
                   />
                 );
               })}

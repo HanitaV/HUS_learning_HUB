@@ -5,6 +5,7 @@ import type {
   CurriculumHorizon,
   CurriculumSearchHit,
   GroundedEssayContextPacket,
+  RevisionDiffContext,
   SyllabusRelation,
 } from '../../domain/curriculum-tutor';
 import type { Course, EntityId, Lesson } from '../../domain/learning';
@@ -14,9 +15,9 @@ import type {
   WrittenReasoningStep,
   WrittenStepDraft,
 } from '../../domain/semi-essay';
-import type { LearningContent } from '../../domain/workspace';
+import type { ExerciseDefinition, LearningContent } from '../../domain/workspace';
 import { normalizeVietnamese } from '../courses/search';
-import { buildLessonGraph } from './graph';
+import { buildLessonGraph, type LessonGraphLayout, type LessonGraphNode } from './graph';
 import { parseMicroLesson } from './micro-lesson';
 import { convertStudentShorthandToLatex } from './realtime-math-preview';
 
@@ -161,16 +162,35 @@ export function buildCurriculumHorizon(
   };
 }
 
+export interface PrecomputedLessonGraph {
+  readonly graph: LessonGraphLayout;
+  readonly nodeById: ReadonlyMap<EntityId, LessonGraphNode>;
+}
+
+export interface PreparedCurriculumDoc {
+  readonly chunk: CurriculumChunk;
+  readonly freq: ReadonlyMap<string, number>;
+  readonly docLen: number;
+}
+
+export interface PreparedCurriculumIndex {
+  readonly docs: readonly PreparedCurriculumDoc[];
+  readonly avgDocLen: number;
+}
+
 export function classifyLessonRelation(
   course: Course,
   content: LearningContent,
   targetLessonId: EntityId,
   candidateLessonId: EntityId,
+  precomputed?: PrecomputedLessonGraph,
 ): SyllabusRelation {
   if (candidateLessonId === targetLessonId) return 'current-lesson';
-  const graph = buildLessonGraph(course, content);
-  const targetNode = graph.nodes.find(n => n.id === targetLessonId);
-  const candidateNode = graph.nodes.find(n => n.id === candidateLessonId);
+  const nodeById = precomputed
+    ? precomputed.nodeById
+    : new Map(buildLessonGraph(course, content).nodes.map(n => [n.id, n]));
+  const targetNode = nodeById.get(targetLessonId);
+  const candidateNode = nodeById.get(candidateLessonId);
   if (!targetNode || !candidateNode) return 'earlier-syllabus';
 
   if (targetNode.directPrereqIds.includes(candidateLessonId)) {
@@ -202,13 +222,21 @@ export function indexLessonMarkdownChunks(params: {
 }): readonly CurriculumChunk[] {
   const { course, content, targetLessonId, markdownByLessonId } = params;
   const graph = buildLessonGraph(course, content);
+  const nodeById = new Map(graph.nodes.map(n => [n.id, n]));
+  const precomputed: PrecomputedLessonGraph = { graph, nodeById };
   const chunks: CurriculumChunk[] = [];
 
   for (const node of graph.nodes) {
     const rawMd = markdownByLessonId[node.lesson.id];
     if (!rawMd) continue;
 
-    const relation = classifyLessonRelation(course, content, targetLessonId, node.lesson.id);
+    const relation = classifyLessonRelation(
+      course,
+      content,
+      targetLessonId,
+      node.lesson.id,
+      precomputed,
+    );
     const parsed = parseMicroLesson(rawMd);
 
     for (const card of parsed.cards) {
@@ -244,38 +272,13 @@ const RELATION_BOOST: Readonly<Record<SyllabusRelation, number>> = {
 };
 
 /**
- * Deterministic Okapi BM25 + Graph-Proximity Retriever over heading-chunked HUS lessons.
- * Defaults to excluding `'later-syllabus'` chunks so Gemini never pulls unlearned theorems.
+ * Pre-tokenizes heading-chunked curriculum documents once so repeated searches
+ * and context-packet builds run in O(queryTerms * docs) without re-running tokenization.
  */
-export function searchCurriculumChunks(
+export function prepareCurriculumSearchIndex(
   chunks: readonly CurriculumChunk[],
-  query: string,
-  options?: {
-    readonly limit?: number | undefined;
-    readonly allowFutureChapters?: boolean | undefined;
-    readonly preferredHeadingIds?: readonly string[] | undefined;
-  },
-): readonly CurriculumSearchHit[] {
-  const limit = Math.max(1, Math.min(12, options?.limit ?? 4));
-  const allowFuture = options?.allowFutureChapters ?? false;
-  const preferredHeadings = new Set(options?.preferredHeadingIds ?? []);
-
-  const pool = allowFuture
-    ? chunks
-    : chunks.filter(chunk => chunk.relationToTarget !== 'later-syllabus');
-
-  if (pool.length === 0) return [];
-
-  const queryTokens = [...new Set(tokenizeAcademicText(query))];
-  if (queryTokens.length === 0) {
-    return pool.slice(0, limit).map(chunk => ({
-      chunk,
-      score: RELATION_BOOST[chunk.relationToTarget],
-      matchedTerms: [],
-    }));
-  }
-
-  const tokenizedDocs = pool.map(chunk => {
+): PreparedCurriculumIndex {
+  const docs: PreparedCurriculumDoc[] = chunks.map(chunk => {
     const titleTokens = tokenizeAcademicText(`${chunk.lessonTitle} ${chunk.sectionTitle}`);
     const formulaTokens = tokenizeAcademicText(chunk.formulas.join(' '));
     const bodyTokens = tokenizeAcademicText(chunk.bodyMarkdown);
@@ -296,13 +299,49 @@ export function searchCurriculumChunks(
   });
 
   const avgDocLen =
-    tokenizedDocs.reduce((sum, doc) => sum + doc.docLen, 0) / tokenizedDocs.length || 1;
-  const docCount = tokenizedDocs.length;
+    docs.length > 0 ? docs.reduce((sum, doc) => sum + doc.docLen, 0) / docs.length : 1;
+
+  return { docs, avgDocLen: avgDocLen || 1 };
+}
+
+export function searchPreparedCurriculumIndex(
+  index: PreparedCurriculumIndex,
+  query: string,
+  options?: {
+    readonly limit?: number | undefined;
+    readonly allowFutureChapters?: boolean | undefined;
+    readonly preferredHeadingIds?: readonly string[] | undefined;
+  },
+): readonly CurriculumSearchHit[] {
+  const limit = Math.max(1, Math.min(12, options?.limit ?? 4));
+  const allowFuture = options?.allowFutureChapters ?? false;
+  const preferredHeadings = new Set(options?.preferredHeadingIds ?? []);
+
+  const pool = allowFuture
+    ? index.docs
+    : index.docs.filter(doc => doc.chunk.relationToTarget !== 'later-syllabus');
+
+  if (pool.length === 0) return [];
+
+  const queryTokens = [...new Set(tokenizeAcademicText(query))];
+  if (queryTokens.length === 0) {
+    return pool.slice(0, limit).map(doc => ({
+      chunk: doc.chunk,
+      score: RELATION_BOOST[doc.chunk.relationToTarget],
+      matchedTerms: [],
+    }));
+  }
+
+  const avgDocLen =
+    allowFuture && index.docs.length > 0
+      ? index.avgDocLen
+      : pool.reduce((sum, doc) => sum + doc.docLen, 0) / pool.length || 1;
+  const docCount = pool.length;
 
   const df = new Map<string, number>();
   for (const qTok of queryTokens) {
     let count = 0;
-    for (const doc of tokenizedDocs) {
+    for (const doc of pool) {
       if (doc.freq.has(qTok)) count += 1;
     }
     df.set(qTok, count);
@@ -312,7 +351,7 @@ export function searchCurriculumChunks(
   const b = 0.75;
   const scored: CurriculumSearchHit[] = [];
 
-  for (const doc of tokenizedDocs) {
+  for (const doc of pool) {
     let bm25 = 0;
     const matchedTerms: string[] = [];
 
@@ -347,14 +386,30 @@ export function searchCurriculumChunks(
   if (scored.length === 0) {
     // Fallback to foundational intro/explain cards of the current lesson
     return pool
-      .filter(c => c.relationToTarget === 'current-lesson')
+      .filter(doc => doc.chunk.relationToTarget === 'current-lesson')
       .slice(0, limit)
-      .map(chunk => ({ chunk, score: 0.5, matchedTerms: [] }));
+      .map(doc => ({ chunk: doc.chunk, score: 0.5, matchedTerms: [] }));
   }
 
   return scored
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+}
+
+/**
+ * Deterministic Okapi BM25 + Graph-Proximity Retriever over heading-chunked HUS lessons.
+ * Defaults to excluding `'later-syllabus'` chunks so Gemini never pulls unlearned theorems.
+ */
+export function searchCurriculumChunks(
+  chunks: readonly CurriculumChunk[],
+  query: string,
+  options?: {
+    readonly limit?: number | undefined;
+    readonly allowFutureChapters?: boolean | undefined;
+    readonly preferredHeadingIds?: readonly string[] | undefined;
+  },
+): readonly CurriculumSearchHit[] {
+  return searchPreparedCurriculumIndex(prepareCurriculumSearchIndex(chunks), query, options);
 }
 
 function summarizeChunkForRail(markdown: string, maxChars = 340): string {
@@ -391,6 +446,7 @@ export function synthesizeFallbackTheoryAnchors(
   exercise: SemiEssayExercise,
   activeStepIndex: number,
   maxAnchors = 3,
+  preparedIndex?: PreparedCurriculumIndex,
 ): {
   readonly anchors: readonly TheoryAnchor[];
   readonly activeAnchorIds: readonly string[];
@@ -411,7 +467,9 @@ export function synthesizeFallbackTheoryAnchors(
     activeStep?.prompt ?? '',
   ].join(' ');
 
-  const hits = searchCurriculumChunks(chunks, query, { limit: maxAnchors });
+  const hits = preparedIndex
+    ? searchPreparedCurriculumIndex(preparedIndex, query, { limit: maxAnchors })
+    : searchCurriculumChunks(chunks, query, { limit: maxAnchors });
   const anchors: TheoryAnchor[] = hits.map((hit, idx) => ({
     id: `rag-anchor-${idx + 1}-${hit.chunk.headingId}`,
     title:
@@ -514,7 +572,10 @@ export function buildGroundedEssayContextPacket(params: {
   readonly stepNumber: number;
   readonly draft: WrittenStepDraft;
   readonly chunks: readonly CurriculumChunk[];
+  readonly preparedIndex?: PreparedCurriculumIndex | undefined;
   readonly effectiveTheoryAnchors: readonly TheoryAnchor[];
+  readonly studentInteractiveWorkSummary?: readonly string[] | undefined;
+  readonly revisionDiffContext?: RevisionDiffContext | undefined;
   readonly internalReferenceForWebMcp?: boolean | undefined;
   readonly nowIso?: string | undefined;
 }): GroundedEssayContextPacket {
@@ -527,7 +588,10 @@ export function buildGroundedEssayContextPacket(params: {
     stepNumber,
     draft,
     chunks,
+    preparedIndex,
     effectiveTheoryAnchors,
+    studentInteractiveWorkSummary = [],
+    revisionDiffContext,
     internalReferenceForWebMcp = false,
   } = params;
 
@@ -544,11 +608,17 @@ export function buildGroundedEssayContextPacket(params: {
     .map(a => a.lessonHeadingId)
     .filter((id): id is string => Boolean(id));
 
-  const hits = searchCurriculumChunks(chunks, searchQuery, {
-    limit: 4,
-    allowFutureChapters: false,
-    preferredHeadingIds,
-  });
+  const hits = preparedIndex
+    ? searchPreparedCurriculumIndex(preparedIndex, searchQuery, {
+        limit: 4,
+        allowFutureChapters: false,
+        preferredHeadingIds,
+      })
+    : searchCurriculumChunks(chunks, searchQuery, {
+        limit: 4,
+        allowFutureChapters: false,
+        preferredHeadingIds,
+      });
 
   const allHints = [...(step.hint ? [step.hint] : []), ...(step.hints ?? [])];
 
@@ -588,12 +658,24 @@ export function buildGroundedEssayContextPacket(params: {
             'Hãy đối chiếu chi tiết bài nháp / bản sửa của sinh viên với từng tiêu chí rubricCriteria, chỉ rõ ý đã đạt, ý còn thiếu điều kiện chặt chẽ hoặc lệch ký hiệu giáo trình.',
           ];
 
-  const pedagogicalContract = internalReferenceForWebMcp
-    ? [
-        ...basePedagogicalContract,
-        'BẢO MẬT ĐỀ THI: Trường referenceModelAnswer và rubricCriteria chỉ cung cấp ngầm qua WebMCP để đối chiếu tính chính xác & cách trình bày của sinh viên; TUYỆT ĐỐI KHÔNG chép lộ nguyên văn đáp án mẫu ra phần nhận xét hiển thị trên giao diện.',
-      ]
-    : basePedagogicalContract;
+  const enrichedContract = [
+    ...basePedagogicalContract,
+    ...(studentInteractiveWorkSummary.length > 0
+      ? [
+          'KIỂM TRA CHÉO HÌNH VẼ ↔ LỜI GIẢI: Đối chiếu trực tiếp phần bài làm tương tác trước đó (studentInteractiveWorkSummary: lực FBD, electron MO, nhánh xác suất, bảng dấu) với lời giải tự luận; nếu mâu thuẫn (ví dụ vẽ thiếu lực nhưng phương trình lại có hoặc ngược lại), hãy cảnh báo rõ trong conventionWarnings.',
+        ]
+      : []),
+    ...(revisionDiffContext
+      ? [
+          `TRÍ NHỚ SỬA BÀI (Lần chấm #${revisionDiffContext.attemptNumber}): Công nhận các ý sinh viên vừa bổ sung/sửa đúng so với nhận xét trước, không lặp lại máy móc lỗi đã khắc phục, và tập trung vào điểm còn thiếu.`,
+        ]
+      : []),
+    ...(internalReferenceForWebMcp
+      ? [
+          'BẢO MẬT ĐỀ THI: Trường referenceModelAnswer và rubricCriteria chỉ cung cấp ngầm qua WebMCP để đối chiếu tính chính xác & cách trình bày của sinh viên; TUYỆT ĐỐI KHÔNG chép lộ nguyên văn đáp án mẫu ra phần nhận xét hiển thị trên giao diện.',
+        ]
+      : []),
+  ];
 
   const visualContextSummary = summarizeExerciseVisualContext(exercise);
 
@@ -622,6 +704,7 @@ export function buildGroundedEssayContextPacket(params: {
       given: exercise.given,
       theoryAnchors: effectiveTheoryAnchors,
       ...(visualContextSummary.length > 0 ? { visualContextSummary } : {}),
+      ...(studentInteractiveWorkSummary.length > 0 ? { studentInteractiveWorkSummary } : {}),
     },
     activeStep: {
       id: step.id,
@@ -637,6 +720,7 @@ export function buildGroundedEssayContextPacket(params: {
       ...(draft.modelRevealed || internalReferenceForWebMcp
         ? { referenceModelAnswer: step.modelAnswer }
         : {}),
+      ...(revisionDiffContext ? { revisionDiffContext } : {}),
     },
     groundedExcerpts: hits.map(hit => ({
       citationLabel: `[${canon.academicCode} · ${hit.chunk.lessonTitle} § ${hit.chunk.sectionTitle}]`,
@@ -645,7 +729,7 @@ export function buildGroundedEssayContextPacket(params: {
       relation: hit.chunk.relationToTarget,
       excerptMarkdown: truncateExcerpt(hit.chunk.bodyMarkdown),
     })),
-    pedagogicalContract,
+    pedagogicalContract: enrichedContract,
   };
 }
 
@@ -707,9 +791,28 @@ export function formatAskGeminiPromptPacket(
           ...packet.exercise.visualContextSummary.map(line => `  - ${line}`),
         ]
       : []),
+    ...(packet.exercise.studentInteractiveWorkSummary &&
+    packet.exercise.studentInteractiveWorkSummary.length > 0
+      ? [
+          '- **Bài làm tương tác của sinh viên ở các bước trước (dùng để kiểm tra chéo với lời giải):**',
+          ...packet.exercise.studentInteractiveWorkSummary.map(line => `  - ${line}`),
+        ]
+      : []),
     `- **Bước ${packet.activeStep.stepNumber}/${packet.activeStep.totalSteps} (` +
       `\`${packet.activeStep.id}\`):** ${packet.activeStep.title}`,
     `- **Yêu cầu bước này:** ${packet.activeStep.prompt}`,
+    ...(packet.activeStep.revisionDiffContext
+      ? [
+          '',
+          `### Lịch sử sửa bài (Lần chấm #${packet.activeStep.revisionDiffContext.attemptNumber})`,
+          `- **Nhận xét lần trước:** ${packet.activeStep.revisionDiffContext.previousSummary}${
+            typeof packet.activeStep.revisionDiffContext.previousScore === 'number'
+              ? ` (Điểm cũ: ${packet.activeStep.revisionDiffContext.previousScore}/10)`
+              : ''
+          }`,
+          `- **Thay đổi trong bài viết mới:** ${packet.activeStep.revisionDiffContext.draftChangeSummary}`,
+        ]
+      : []),
     '',
     '## 3. Tiêu chí tự đối chiếu chuẩn của bước này (`rubricCriteria`)',
     criteriaLines,
@@ -809,8 +912,19 @@ export function buildNotebookLmCourseBundle(params: {
   readonly content: LearningContent;
   readonly markdownByLessonId: Readonly<Record<string, string>>;
   readonly filterChapterId?: EntityId | undefined;
+  readonly exercises?: readonly ExerciseDefinition[] | undefined;
+  readonly bundleMode?: 'syllabus' | 'study-pack' | undefined;
 }): { readonly filename: string; readonly markdown: string; readonly lessonCount: number } {
-  const { course, subjectTitle, canon, content, markdownByLessonId, filterChapterId } = params;
+  const {
+    course,
+    subjectTitle,
+    canon,
+    content,
+    markdownByLessonId,
+    filterChapterId,
+    exercises = [],
+    bundleMode = 'syllabus',
+  } = params;
   const code = (course.academicCode ?? course.id).toLowerCase().replace(/[^a-z0-9-]+/g, '-');
   const chapters = course.chapterIds
     .map(id => content.chapters.find(ch => ch.id === id))
@@ -818,7 +932,9 @@ export function buildNotebookLmCourseBundle(params: {
     .filter(ch => !filterChapterId || ch.id === filterChapterId);
 
   const headerLines: string[] = [
-    `# Sổ tay Giáo trình Chuẩn ĐHKHTN (VNU-HUS): ${canon.academicCode} — ${course.title}`,
+    bundleMode === 'study-pack'
+      ? `# Gói Ôn Thi & Ngân hàng Dạng bài ĐHKHTN (VNU-HUS): ${canon.academicCode} — ${course.title}`
+      : `# Sổ tay Giáo trình Chuẩn ĐHKHTN (VNU-HUS): ${canon.academicCode} — ${course.title}`,
     '',
     `- **Mã học phần:** ${canon.academicCode} (\`${course.id}\`)`,
     ...(subjectTitle ? [`- **Nhóm ngành:** ${subjectTitle}`] : []),
@@ -828,6 +944,13 @@ export function buildNotebookLmCourseBundle(params: {
     '## Quy ước ký hiệu & Nguyên tắc trình bày bắt buộc của học phần',
     ...canon.notationRules.map(r => `- ${r}`),
     ...canon.forbiddenShortcutHints.map(r => `- **Tránh lỗi vượt chương / giải tắt:** ${r}`),
+    ...(canon.presentationCheckpoints && canon.presentationCheckpoints.length > 0
+      ? [
+          '',
+          '### Tiêu chí kiểm tra trình bày tự luận',
+          ...canon.presentationCheckpoints.map(cp => `- ${cp}`),
+        ]
+      : []),
     '',
     '---',
     '',
@@ -835,6 +958,7 @@ export function buildNotebookLmCourseBundle(params: {
 
   const bodyLines: string[] = [];
   let lessonCount = 0;
+  const includedLessonIds = new Set<string>();
 
   chapters.forEach((chapter, chOffset) => {
     const originalIndex = course.chapterIds.indexOf(chapter.id);
@@ -860,6 +984,7 @@ export function buildNotebookLmCourseBundle(params: {
         const md = markdownByLessonId[lessonId];
         if (!lesson || !md) continue;
         lessonCount += 1;
+        includedLessonIds.add(lesson.id);
         const prov = lesson.provenance ?? course.provenance;
         bodyLines.push(`### Bài học: ${lesson.title} (\`${lesson.id}\`)`);
         bodyLines.push(`*Nguồn xác minh: \`${prov.path}\` · \`${prov.repository}\`*`);
@@ -872,9 +997,37 @@ export function buildNotebookLmCourseBundle(params: {
     }
   });
 
+  if (bundleMode === 'study-pack' && exercises.length > 0) {
+    const scopedExercises = exercises.filter(ex => includedLessonIds.has(ex.lessonId));
+    if (scopedExercises.length > 0) {
+      bodyLines.push('# Phụ lục: Ngân hàng Dạng bài & Tiêu chí Trình bày Tự luyện');
+      bodyLines.push(
+        '> *Ghi chú: Đề bài và tiêu chí chấm được đóng gói để NotebookLM tạo Flashcard / Audio Overview / Quiz ôn tập (ẩn sẵn đáp án giải chi tiết).*',
+      );
+      bodyLines.push('');
+      scopedExercises.slice(0, 80).forEach((ex, idx) => {
+        bodyLines.push(`## Bài ${idx + 1}. ${ex.title} (\`${ex.kind}\`)`);
+        bodyLines.push(ex.prompt.trim());
+        if (ex.kind === 'semi-essay') {
+          const written = ex.steps.filter(s => s.kind === 'written-reasoning');
+          for (const ws of written) {
+            if (ws.rubric.length > 0) {
+              bodyLines.push('**Tiêu chí chấm trình bày:**');
+              for (const r of ws.rubric) {
+                bodyLines.push(`- ${r.prompt}`);
+              }
+            }
+          }
+        }
+        bodyLines.push('');
+      });
+    }
+  }
+
   const suffix = filterChapterId ? `-${filterChapterId}` : '';
+  const kindSuffix = bundleMode === 'study-pack' ? 'ontap-notebooklm' : 'giaotrinh-notebooklm';
   return {
-    filename: `${code}${suffix}-giaotrinh-notebooklm.md`,
+    filename: `${code}${suffix}-${kindSuffix}.md`,
     markdown: [...headerLines, ...bodyLines].join('\n').trim() + '\n',
     lessonCount,
   };

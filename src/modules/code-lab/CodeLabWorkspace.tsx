@@ -1,8 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useWebMcpActivity } from '../../app/useWebMcpActivity';
 import type { SubjectToolProps } from '../../contracts/subject-module';
 import type {
   CodeDifficulty,
   CodeExecutionResult,
+  CodeLabCoachingFeedback,
   CodeLanguage,
   CodePlaygroundSnippet,
   CodeProblem,
@@ -16,6 +18,15 @@ import {
   summarizeJudge,
 } from '../../core/code-lab/judge';
 import { buildPlaygroundSnippets, getStarterTemplate } from '../../core/code-lab/playground';
+import {
+  buildCodeLabContextPacket,
+  formatAskGeminiCodeLabPrompt,
+  parseExternalCodeLabFeedback,
+} from '../../core/code-lab/webmcp-coach';
+import {
+  detectWebMcpSupport,
+  registerCodeLabWebMcpTools,
+} from '../../infrastructure/ai/webmcp-essay-bridge';
 import { createPyodideRunner } from '../../infrastructure/runtimes/pyodide-runtime';
 import { createCheerpJRunner } from '../../infrastructure/runtimes/cheerpj-runtime';
 import type { RuntimeStage, WasmCodeRunner } from '../../infrastructure/runtimes/types';
@@ -24,7 +35,10 @@ import { Badge, type BadgeTone } from '../../components/ui/Badge';
 import {
   AlertCircleIcon,
   CheckCircleIcon,
+  CheckIcon,
   ChevronDownIcon,
+  ClipboardCheckIcon,
+  CopyIcon,
   PlayIcon,
   RotateCcwIcon,
 } from '../../components/ui/Icons';
@@ -220,6 +234,16 @@ export default function CodeLabWorkspace({
       lessonMatchedProblems.length > 0,
   );
 
+  const webMcpActivity = useWebMcpActivity();
+  const [webMcpAvailable, setWebMcpAvailable] = useState<boolean>(
+    () => detectWebMcpSupport().available,
+  );
+  const [codeCoaching, setCodeCoaching] = useState<CodeLabCoachingFeedback | null>(null);
+  const [codeCoachCopyStatus, setCodeCoachCopyStatus] = useState<string | null>(null);
+  const [codeCoachManualOpen, setCodeCoachManualOpen] = useState(false);
+  const [codeCoachManualText, setCodeCoachManualText] = useState('');
+  const [codeCoachError, setCodeCoachError] = useState<string | null>(null);
+
   const isContextualExerciseSurface =
     embeddedSurface === 'lesson-exercise' || embeddedSurface === 'practice';
 
@@ -242,6 +266,58 @@ export default function CodeLabWorkspace({
     () => problems.find(problem => problem.id === selectedProblemId) ?? problems[0],
     [problems, selectedProblemId],
   );
+
+  useEffect(() => {
+    setCodeCoaching(null);
+    setCodeCoachCopyStatus(null);
+    setCodeCoachError(null);
+  }, [selectedProblemId, workspaceMode]);
+
+  const codeCoachRef = useRef({
+    courseId,
+    workspaceMode,
+    activeLanguage: courseDefaultLanguage as CodeLanguage,
+    selectedProblem: undefined as CodeProblem | undefined,
+    activeSnippetLabel: undefined as string | undefined,
+    activeCode: '',
+    activeStdin: '',
+    runResult: null as CodeExecutionResult | null,
+    judgeSummary: null as JudgeSummary | null,
+  });
+
+  useEffect(() => {
+    if (embeddedSurface !== 'course') return;
+    const registration = registerCodeLabWebMcpTools({
+      getContextPacket: () => {
+        const s = codeCoachRef.current;
+        return buildCodeLabContextPacket({
+          courseId: s.courseId,
+          mode: s.workspaceMode,
+          language: s.activeLanguage,
+          problem: s.selectedProblem,
+          snippetLabel: s.activeSnippetLabel,
+          studentCode: s.activeCode,
+          customStdin: s.activeStdin,
+          runResult: s.runResult,
+          judgeSummary: s.judgeSummary,
+        });
+      },
+      getLanguage: () => codeCoachRef.current.activeLanguage,
+      getProblemId: () =>
+        codeCoachRef.current.workspaceMode === 'problem'
+          ? codeCoachRef.current.selectedProblem?.id
+          : undefined,
+      onReceiveCoaching: feedback => {
+        setCodeCoaching(feedback);
+        setCodeCoachError(null);
+        setCodeCoachManualOpen(false);
+      },
+    });
+    setWebMcpAvailable(registration.support.available);
+    return () => {
+      registration.dispose();
+    };
+  }, [embeddedSurface]);
   const [problemLanguage, setProblemLanguage] = useState<CodeLanguage>(
     selectedProblem?.defaultLanguage ?? courseDefaultLanguage,
   );
@@ -867,6 +943,257 @@ export default function CodeLabWorkspace({
     </div>
   );
 
+  codeCoachRef.current = {
+    courseId,
+    workspaceMode,
+    activeLanguage,
+    selectedProblem,
+    activeSnippetLabel:
+      effectiveSnippets.find(s => s.id === selectedSnippetId)?.label ?? injectedLabel ?? undefined,
+    activeCode,
+    activeStdin,
+    runResult,
+    judgeSummary,
+  };
+
+  const handleCopyCodeCoachPrompt = async () => {
+    const s = codeCoachRef.current;
+    const packet = buildCodeLabContextPacket({
+      courseId: s.courseId,
+      mode: s.workspaceMode,
+      language: s.activeLanguage,
+      problem: s.selectedProblem,
+      snippetLabel: s.activeSnippetLabel,
+      studentCode: s.activeCode,
+      customStdin: s.activeStdin,
+      runResult: s.runResult,
+      judgeSummary: s.judgeSummary,
+    });
+    const prompt = formatAskGeminiCodeLabPrompt(packet, { webMcpAvailable });
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCodeCoachCopyStatus('Đã sao chép gói ngữ cảnh CodeLab — dán vào Ask Gemini!');
+      window.setTimeout(() => setCodeCoachCopyStatus(null), 4000);
+    } catch {
+      setCodeCoachCopyStatus('Không thể ghi clipboard; hãy kiểm tra quyền trình duyệt.');
+    }
+  };
+
+  const applyExternalCodeCoachingRaw = (rawText: string) => {
+    const s = codeCoachRef.current;
+    const parsed = parseExternalCodeLabFeedback(
+      rawText,
+      s.activeLanguage,
+      s.workspaceMode === 'problem' ? s.selectedProblem?.id : undefined,
+      'clipboard',
+    );
+    if (!parsed.ok) {
+      setCodeCoachError(parsed.error);
+      return false;
+    }
+    setCodeCoaching(parsed.value);
+    setCodeCoachError(null);
+    setCodeCoachManualOpen(false);
+    setCodeCoachManualText('');
+    return true;
+  };
+
+  const handlePasteCodeCoachFromClipboard = async () => {
+    try {
+      const clip = await navigator.clipboard.readText();
+      if (!clip.trim()) {
+        setCodeCoachManualOpen(true);
+        setCodeCoachError('Clipboard đang trống. Hãy dán phản hồi JSON từ Gemini vào ô bên dưới.');
+        return;
+      }
+      if (!applyExternalCodeCoachingRaw(clip)) {
+        setCodeCoachManualOpen(true);
+      }
+    } catch {
+      setCodeCoachManualOpen(true);
+      setCodeCoachError('Trình duyệt yêu cầu dán thủ công: nhấn Ctrl+V vào ô bên dưới.');
+    }
+  };
+
+  const codeCoachPanel = (
+    <section
+      data-codelab-coach="true"
+      aria-label="Trợ giảng Socratic gỡ lỗi CodeLab"
+      className="space-y-2.5 rounded-[var(--radius-lg)] border border-border bg-surface-subtle/50 px-3.5 py-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ClipboardCheckIcon width={14} height={14} className="text-accent" />
+          <span className="text-xs font-semibold text-ink">
+            Gỡ lỗi Socratic &amp; Độ phức tạp (Gemini)
+          </span>
+          {embeddedSurface === 'course' ? (
+            <Badge tone={webMcpAvailable ? 'success' : 'warning'}>
+              {webMcpAvailable ? 'WebMCP CodeLab sẵn sàng' : 'Dual-Path Gemini'}
+            </Badge>
+          ) : null}
+          {webMcpActivity.labelVi && embeddedSurface === 'course' ? (
+            <span data-webmcp-live-activity="true">
+              <Badge tone="accent">{webMcpActivity.labelVi}</Badge>
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            data-codelab-copy-prompt-btn="true"
+            onClick={() => void handleCopyCodeCoachPrompt()}
+            className="hus-btn hus-btn-secondary min-h-[30px] px-2.5 py-1 text-xs"
+          >
+            {codeCoachCopyStatus ? (
+              <CheckIcon width={13} height={13} className="text-success" />
+            ) : (
+              <CopyIcon width={13} height={13} />
+            )}
+            <span>Gợi mở gỡ lỗi Socratic (Gemini)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void handlePasteCodeCoachFromClipboard()}
+            className="hus-btn hus-btn-secondary min-h-[30px] px-2.5 py-1 text-xs"
+          >
+            Nhập từ Gemini
+          </button>
+          <button
+            type="button"
+            data-codelab-manual-toggle="true"
+            aria-expanded={codeCoachManualOpen}
+            onClick={() => setCodeCoachManualOpen(v => !v)}
+            className="hus-btn hus-btn-ghost min-h-[30px] border border-border px-2.5 py-1 text-xs"
+          >
+            Dán JSON
+          </button>
+        </div>
+      </div>
+
+      {codeCoachCopyStatus ? (
+        <p role="status" className="!my-0 text-xs text-success">
+          {codeCoachCopyStatus}
+        </p>
+      ) : null}
+
+      {codeCoachManualOpen ? (
+        <div className="space-y-2 rounded-[var(--radius-md)] border border-border bg-canvas/80 p-3">
+          <textarea
+            value={codeCoachManualText}
+            onChange={e => setCodeCoachManualText(e.target.value)}
+            rows={4}
+            aria-label="Dán khối JSON nhận xét CodeLab từ Gemini"
+            placeholder="Dán đoạn phản hồi JSON từ Gemini vào đây..."
+            className="w-full rounded-[var(--radius-sm)] border border-border bg-surface p-2 font-mono text-xs text-ink focus:border-accent focus:outline-none"
+          />
+          {codeCoachError ? (
+            <p role="alert" className="!my-0 text-xs text-danger">
+              {codeCoachError}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => applyExternalCodeCoachingRaw(codeCoachManualText)}
+              className="hus-btn hus-btn-primary min-h-[30px] px-3 py-1 text-xs"
+            >
+              Đồng bộ gợi ý vào CodeLab
+            </button>
+          </div>
+        </div>
+      ) : codeCoachError ? (
+        <p role="alert" className="!my-0 text-xs text-danger">
+          {codeCoachError}
+        </p>
+      ) : null}
+
+      {codeCoaching ? (
+        <div
+          data-codelab-coaching-card="true"
+          className="space-y-2 rounded-[var(--radius-md)] border border-accent/35 bg-surface p-3 text-xs"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <CheckCircleIcon width={14} height={14} className="text-accent" />
+              <span className="font-semibold text-ink">Phân tích Socratic cho bài làm</span>
+              <Badge
+                tone={
+                  codeCoaching.verdict === 'pass'
+                    ? 'success'
+                    : codeCoaching.verdict === 'needs-fix'
+                      ? 'warning'
+                      : 'neutral'
+                }
+              >
+                {codeCoaching.verdict === 'pass'
+                  ? 'Đạt logic'
+                  : codeCoaching.verdict === 'needs-fix'
+                    ? 'Cần sửa lỗi'
+                    : 'Gợi mở'}
+              </Badge>
+              {codeCoaching.complexityNote ? (
+                <Badge tone="neutral" mono>
+                  {codeCoaching.complexityNote}
+                </Badge>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCodeCoaching(null)}
+              className="text-xs text-ink-muted hover:text-ink hover:underline"
+            >
+              Xóa gợi ý
+            </button>
+          </div>
+
+          <div className="leading-relaxed text-ink [&>p:first-child]:!mt-0 [&>p:last-child]:!mb-0">
+            <Markdown>{codeCoaching.summary}</Markdown>
+          </div>
+
+          {codeCoaching.bugHints.length > 0 ? (
+            <div className="space-y-1 rounded-[var(--radius-sm)] border border-warning/35 bg-warning-subtle/60 px-3 py-2">
+              <p className="!my-0 font-semibold text-ink">Điểm nghi vấn cần kiểm tra lại:</p>
+              <ul className="!my-0 list-disc space-y-0.5 pl-4 text-ink-secondary">
+                {codeCoaching.bugHints.map((hint, idx) => (
+                  <li key={idx}>
+                    <Markdown inline>{hint}</Markdown>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {codeCoaching.edgeCases.length > 0 ? (
+            <div className="space-y-1">
+              <p className="!my-0 font-semibold text-ink">Trường hợp biên nên tự thử nghiệm:</p>
+              <ul className="!my-0 list-disc space-y-0.5 pl-4 text-ink-secondary">
+                {codeCoaching.edgeCases.map((ec, idx) => (
+                  <li key={idx}>
+                    <Markdown inline>{ec}</Markdown>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {codeCoaching.socraticQuestions.length > 0 ? (
+            <div className="space-y-1">
+              <p className="!my-0 font-semibold text-ink">Câu hỏi gợi mở bước tiếp theo:</p>
+              <ol className="!my-0 list-decimal space-y-0.5 pl-4 text-ink-secondary">
+                {codeCoaching.socraticQuestions.map((q, idx) => (
+                  <li key={idx}>
+                    <Markdown inline>{q}</Markdown>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+
   return (
     <section
       aria-label="Phòng thực hành lập trình"
@@ -977,6 +1304,7 @@ export default function CodeLabWorkspace({
 
             {stdinBox}
             {outputConsole}
+            {codeCoachPanel}
           </div>
         </div>
       ) : selectedProblem ? (
@@ -1124,6 +1452,7 @@ export default function CodeLabWorkspace({
             {actionToolbar}
             {stdinBox}
             {outputConsole}
+            {codeCoachPanel}
           </div>
         </div>
       ) : null}

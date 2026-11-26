@@ -3,6 +3,13 @@ import type { EntityId } from '../domain/learning';
 
 export const DEFAULT_REASONING_SCAFFOLDS: readonly ReasoningScaffoldTemplate[] = [
   {
+    id: 'concise-equation-chain',
+    label: 'Biến đổi dòng ngắn gọn (chuẩn đáp án thi)',
+    description: 'Trình bày trực diện bằng chuỗi đẳng thức $$, dấu ⇔ / ⇒ và câu kết ngắn.',
+    template:
+      '$$... = ...$$\n\nTa có: $... \\Leftrightarrow ... \\Rightarrow ...$\n\nVậy $...$.',
+  },
+  {
     id: 'general-structured-reasoning',
     label: 'Giả thiết → Cơ sở lý thuyết → Lập luận & Kết luận',
     description: 'Khung trình bày tự luận chuẩn cho mọi học phần khoa học tự nhiên.',

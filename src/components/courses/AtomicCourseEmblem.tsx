@@ -1,3 +1,5 @@
+import type { DisciplineTone } from '../../contracts/subject-module';
+
 /**
  * Compact scientific atomic emblem for course cards.
  * Visualizes real chapter count as concentric electron shells and real lesson count as orbital electrons,
@@ -8,6 +10,7 @@ export interface AtomicCourseEmblemProps {
   readonly electronCount: number;
   readonly isActive: boolean;
   readonly progressPercent?: number | undefined;
+  readonly disciplineTone?: DisciplineTone | undefined;
 }
 
 export function AtomicCourseEmblem({
@@ -15,6 +18,7 @@ export function AtomicCourseEmblem({
   electronCount,
   isActive,
   progressPercent,
+  disciplineTone,
 }: AtomicCourseEmblemProps) {
   const visibleShells = Math.max(1, Math.min(shellCount || 1, 3));
   const radii = visibleShells === 1 ? [20] : visibleShells === 2 ? [14, 22] : [12, 18, 24];
@@ -23,6 +27,7 @@ export function AtomicCourseEmblem({
   return (
     <svg
       aria-hidden="true"
+      data-discipline={disciplineTone}
       viewBox="0 0 56 56"
       fill="none"
       className="h-12 w-12 shrink-0"
@@ -34,7 +39,7 @@ export function AtomicCourseEmblem({
           cx="28"
           cy="28"
           r={r}
-          stroke={isActive ? 'var(--hus-accent)' : 'var(--hus-border-strong)'}
+          stroke={isActive ? 'var(--disc-accent, var(--hus-accent))' : 'var(--hus-border-strong)'}
           strokeOpacity={isActive ? 0.38 + index * 0.14 : 0.6}
           strokeWidth="1.1"
           strokeDasharray={isActive ? undefined : '2.5 3.5'}
@@ -48,7 +53,7 @@ export function AtomicCourseEmblem({
         rx="24"
         ry="9.5"
         transform="rotate(-26 28 28)"
-        stroke={isActive ? 'var(--hus-accent)' : 'var(--hus-orbit-strong)'}
+        stroke={isActive ? 'var(--disc-accent, var(--hus-accent))' : 'var(--hus-orbit-strong)'}
         strokeOpacity={isActive ? 0.32 : 0.45}
         strokeWidth="1"
       />
@@ -66,7 +71,7 @@ export function AtomicCourseEmblem({
             cx={cx.toFixed(1)}
             cy={cy.toFixed(1)}
             r="2.4"
-            fill={isLit ? 'var(--hus-success)' : 'var(--hus-accent)'}
+            fill={isLit ? 'var(--hus-success)' : 'var(--disc-accent, var(--hus-accent))'}
           />
         );
       })}
@@ -76,15 +81,15 @@ export function AtomicCourseEmblem({
         cx="28"
         cy="28"
         r="5.5"
-        fill={isActive ? 'var(--hus-accent-subtle)' : 'var(--hus-surface-subtle)'}
-        stroke={isActive ? 'var(--hus-accent)' : 'var(--hus-border-strong)'}
+        fill={isActive ? 'var(--disc-surface-active, var(--hus-accent-subtle))' : 'var(--hus-surface-subtle)'}
+        stroke={isActive ? 'var(--disc-accent, var(--hus-accent))' : 'var(--hus-border-strong)'}
         strokeWidth="1.2"
       />
       <circle
         cx="26.8"
         cy="27.2"
         r="1.9"
-        fill={isActive ? 'var(--hus-accent)' : 'var(--hus-ink-muted)'}
+        fill={isActive ? 'var(--disc-accent, var(--hus-accent))' : 'var(--hus-ink-muted)'}
       />
       <circle
         cx="29.6"

@@ -1,5 +1,7 @@
 import { memo, useMemo, useRef, useState } from 'react';
+import { useWebMcpActivity } from '../../app/useWebMcpActivity';
 import type {
+  CoachingHistoryEntry,
   CoachingPromptMode,
   GroundedEssayContextPacket,
   ReasoningScaffoldTemplate,
@@ -40,6 +42,7 @@ export interface EssayWebMcpCoachPanelProps {
   readonly isActiveTarget?: boolean | undefined;
   readonly onActivateTarget?: (() => void) | undefined;
   readonly coachingFeedback?: TutorCoachingFeedback | undefined;
+  readonly coachingHistory?: readonly CoachingHistoryEntry[] | undefined;
   readonly getGroundedPacket: (mode: CoachingPromptMode) => GroundedEssayContextPacket;
   readonly onImportFeedbackText?:
     | ((rawText: string) => { readonly ok: boolean; readonly error?: string | undefined })
@@ -64,6 +67,7 @@ function areCoachPanelPropsEqual(
     prev.hideRubricPrompts === next.hideRubricPrompts &&
     prev.isActiveTarget === next.isActiveTarget &&
     prev.coachingFeedback === next.coachingFeedback &&
+    prev.coachingHistory === next.coachingHistory &&
     Boolean(prev.onInsertScaffold) === Boolean(next.onInsertScaffold) &&
     Boolean(prev.onImportFeedbackText) === Boolean(next.onImportFeedbackText) &&
     Boolean(prev.onClearFeedback) === Boolean(next.onClearFeedback)
@@ -85,11 +89,13 @@ export const EssayWebMcpCoachPanel = memo(function EssayWebMcpCoachPanel({
   isActiveTarget,
   onActivateTarget,
   coachingFeedback,
+  coachingHistory,
   getGroundedPacket,
   onImportFeedbackText,
   onClearFeedback,
 }: EssayWebMcpCoachPanelProps) {
   const { openGuide } = useWebMcpGuide();
+  const webMcpActivity = useWebMcpActivity();
   const isExamSheet = variant === 'exam-sheet';
   const callbacksRef = useRef({
     onActivateTarget,
@@ -233,6 +239,11 @@ export const EssayWebMcpCoachPanel = memo(function EssayWebMcpCoachPanel({
             <Badge tone="warning">Cần bổ sung ý / ký hiệu</Badge>
           ) : null}
           {isActiveTarget ? <Badge tone="accent">Đang chọn</Badge> : null}
+          {webMcpActivity.labelVi && (isActiveTarget || !isExamSheet) ? (
+            <span data-webmcp-live-activity="true">
+              <Badge tone="accent">{webMcpActivity.labelVi}</Badge>
+            </span>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -494,6 +505,38 @@ export const EssayWebMcpCoachPanel = memo(function EssayWebMcpCoachPanel({
           <div className="leading-relaxed text-ink [&>p:first-child]:!mt-0 [&>p:last-child]:!mb-0">
             <Markdown>{coachingFeedback.summary}</Markdown>
           </div>
+
+          {coachingHistory && coachingHistory.length >= 2 ? (
+            <div
+              data-coaching-history-timeline="true"
+              className="space-y-1.5 rounded-[var(--radius-sm)] border border-border/80 bg-canvas/65 px-3 py-2 text-xs"
+            >
+              <p className="!my-0 font-semibold text-ink">
+                Tiến trình sửa bài ({coachingHistory.length} lần chấm):
+              </p>
+              <ol className="!my-0 flex flex-wrap items-center gap-2 !list-none !pl-0">
+                {coachingHistory.map((entry, idx) => (
+                  <li
+                    key={`${entry.receivedAt}-${idx}`}
+                    className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-border bg-surface px-2 py-0.5 font-mono text-[11px] tabular-nums text-ink-secondary"
+                    title={entry.summary}
+                  >
+                    <span className="font-semibold text-ink">Lần {idx + 1}:</span>
+                    {typeof entry.score === 'number' ? (
+                      <span>{formatScoreVi(entry.score)}/10</span>
+                    ) : (
+                      <span>Đã gợi mở</span>
+                    )}
+                    {entry.verdict === 'pass' ? (
+                      <span className="font-semibold text-success">· PASS</span>
+                    ) : entry.verdict === 'not-pass' ? (
+                      <span className="text-danger">· Chưa đạt</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
 
           {coachingFeedback.conventionWarnings.length > 0 ? (
             <div className="space-y-1 rounded-[var(--radius-sm)] border border-warning/40 bg-warning-subtle/70 px-3 py-2.5 text-xs text-ink">

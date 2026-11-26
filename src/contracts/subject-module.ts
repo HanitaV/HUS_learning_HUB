@@ -61,6 +61,20 @@ export interface SubjectCelestialBackdrop {
   readonly constellations: readonly CelestialConstellationFigure[];
 }
 
+export type DisciplineTone = 'sapphire' | 'emerald' | 'amber' | 'violet';
+
+export type DisciplineEmblemKind =
+  | 'circuit-tree'
+  | 'hex-orbital'
+  | 'wave-pendulum'
+  | 'manifold-curve';
+
+export interface SubjectVisualTheme {
+  readonly tone: DisciplineTone;
+  readonly emblemKind: DisciplineEmblemKind;
+  readonly focusSummary: string;
+}
+
 /** React integration boundary. Domain types and calculations remain React-free. */
 export interface SubjectModule {
   readonly subjectId: EntityId;
@@ -73,6 +87,7 @@ export interface SubjectModule {
   readonly practiceTrackLabel?: string;
   readonly theoryTrackLabel?: string;
   readonly defaultToolId?: EntityId;
+  readonly visualTheme?: SubjectVisualTheme;
   readonly celestialBackdrop?: SubjectCelestialBackdrop;
   readonly tools?: readonly SubjectToolDefinition[];
 }

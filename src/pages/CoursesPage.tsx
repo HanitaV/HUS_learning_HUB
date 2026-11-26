@@ -23,7 +23,12 @@ import {
 import { courseLessons } from '../core/learning/content';
 import { matchRealElement } from '../core/learning/elements';
 import { courseEffectiveProgress } from '../core/learning/progress';
-import { courseRegistry, subjectList } from '../infrastructure/content/catalogue';
+import { resolveCourseConventionCanon } from '../content/curriculum-canons';
+import {
+  courseRegistry,
+  getSubjectModule,
+  subjectList,
+} from '../infrastructure/content/catalogue';
 import { learningContent } from '../infrastructure/content/learning';
 import { useLearningProgress } from '../app/useLearningProgress';
 import { CourseCard } from '../components/courses/CourseCard';
@@ -32,6 +37,7 @@ import {
   type OrbitalCourseItem,
 } from '../components/courses/OrbitalCourseUniverse';
 import { Badge } from '../components/ui/Badge';
+import { SelectableCheckIndicator } from '../components/ui/BrandIdentity';
 import { Breadcrumbs } from '../components/ui/Breadcrumbs';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ChevronRightIcon, GridIcon, ListIcon } from '../components/ui/Icons';
@@ -170,12 +176,21 @@ export default function CoursesPage() {
               0,
             ),
           );
+        const tone = getSubjectModule(course.subjectId)?.visualTheme?.tone ?? 'sapphire';
+        const canon = resolveCourseConventionCanon({
+          courseId: course.id,
+          academicCode: course.academicCode,
+          subjectId: course.subjectId,
+          courseTitle: course.title,
+        });
         return {
           course,
           subject: getCourseSubject(course, subjectList),
           lessonCount: lessons.length,
           progressPercent: pct,
           matchedElement: matchRealElement(shellLessonCounts),
+          disciplineTone: tone,
+          studyBadge: canon.studyGuide?.badgeLabel,
         };
       }),
     [allCourses, progress],
@@ -316,12 +331,16 @@ export default function CoursesPage() {
         aria-label="Bộ lọc học phần"
         className="flex flex-col gap-3 rounded-[var(--radius-xl)] border border-border bg-surface/85 px-4 py-3.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-5"
       >
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Lọc theo lĩnh vực">
+        <div
+          className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-0.5 sm:flex-wrap"
+          role="group"
+          aria-label="Lọc theo lĩnh vực"
+        >
           <button
             type="button"
             onClick={() => updateSubject('all')}
             aria-pressed={selectedSubject === 'all'}
-            className={`min-h-[36px] rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium transition-colors duration-200 active:scale-[0.98] ${
+            className={`min-h-[36px] shrink-0 rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium transition-colors duration-200 active:scale-[0.98] ${
               selectedSubject === 'all'
                 ? 'border-accent bg-accent-subtle text-accent-ink'
                 : 'border-border bg-canvas/70 text-ink-secondary hover:border-border-strong hover:text-ink'
@@ -332,19 +351,20 @@ export default function CoursesPage() {
           {subjectList.map(subject => {
             const isSelected = selectedSubject === subject.id;
             const count = allCourses.filter(course => course.subjectId === subject.id).length;
+            const tone = getSubjectModule(subject.id)?.visualTheme?.tone ?? 'sapphire';
             return (
               <button
                 key={subject.id}
                 type="button"
+                data-discipline={tone}
                 onClick={() => updateSubject(subject.id)}
                 aria-pressed={isSelected}
-                className={`min-h-[36px] rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium transition-colors duration-200 active:scale-[0.98] ${
-                  isSelected
-                    ? 'border-accent bg-accent-subtle text-accent-ink'
-                    : 'border-border bg-canvas/70 text-ink-secondary hover:border-border-strong hover:text-ink'
-                }`}
+                className="group hus-disc-tile inline-flex min-h-[36px] shrink-0 items-center gap-2 rounded-[var(--radius-md)] border px-3 py-1.5 text-xs font-medium transition-colors duration-200 active:scale-[0.98]"
               >
-                {subject.title} ({count})
+                <SelectableCheckIndicator checked={isSelected} tone={tone} />
+                <span>
+                  {subject.title} ({count})
+                </span>
               </button>
             );
           })}
@@ -422,7 +442,7 @@ export default function CoursesPage() {
               onKeyDown={handleSearchKeyDown}
               placeholder="Tìm học phần, bài giảng, thuật ngữ (ví dụ: khong thu nguyen)…"
               label="Tìm kiếm trong danh mục học phần"
-              className="w-full sm:max-w-md"
+              className="w-full sm:max-w-md max-sm:[&_input]:text-base"
             />
             <p className="text-xs font-medium text-ink-muted tabular-nums">
               Hiển thị {visibleListItems.length} trên {filteredCourses.length} học phần khớp (tổng{' '}
@@ -432,17 +452,37 @@ export default function CoursesPage() {
 
           {filteredCourses.length > 0 ? (
             <div className="space-y-4">
-              <div className="hus-card-surface overflow-hidden divide-y divide-border rounded-[var(--radius-xl)] border border-border bg-surface">
-                {visibleListItems.map(({ course, subject, lessonCount, progressPercent }) => (
-                  <CourseCard
-                    key={course.id}
-                    course={course}
-                    subject={subject}
-                    layout="list"
-                    lessonCount={lessonCount}
-                    progressPercent={progressPercent}
-                  />
-                ))}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {visibleListItems.map(
+                  ({
+                    course,
+                    subject,
+                    lessonCount,
+                    progressPercent,
+                    disciplineTone,
+                    studyBadge,
+                  }) => {
+                    const canon = resolveCourseConventionCanon({
+                      courseId: course.id,
+                      academicCode: course.academicCode,
+                      subjectId: course.subjectId,
+                      courseTitle: course.title,
+                    });
+                    return (
+                      <CourseCard
+                        key={course.id}
+                        course={course}
+                        subject={subject}
+                        layout="grid"
+                        lessonCount={lessonCount}
+                        progressPercent={progressPercent}
+                        disciplineTone={disciplineTone}
+                        studyBadge={studyBadge}
+                        studyHeadline={canon.studyGuide?.headline}
+                      />
+                    );
+                  },
+                )}
               </div>
               {remainingListCount > 0 ? (
                 <div className="flex justify-center">

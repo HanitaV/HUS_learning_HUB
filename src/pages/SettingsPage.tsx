@@ -1,10 +1,18 @@
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { useWorkspacePreferences } from '../app/useWorkspacePreferences';
+import { useWebMcpActivity } from '../app/useWebMcpActivity';
 import { useWebMcpGuide } from '../app/WebMcpGuideContext';
 import {
+  REGISTERED_CODELAB_TOOL_NAMES,
+  REGISTERED_DIAGNOSTICS_TOOL_NAMES,
+  REGISTERED_ESSAY_TOOL_NAMES,
+  REGISTERED_TOOL_NAMES,
   WEBMCP_ORIGIN_TRIAL_INFO,
   describeInactiveWebMcpReason,
   detectWebMcpSupport,
+  getActiveRegisteredToolNames,
+  runWebMcpDiagnosticsDryRun,
+  type WebMcpDiagnosticsDryRunResult,
 } from '../infrastructure/ai/webmcp-essay-bridge';
 import { resetWebMcpNotice } from '../infrastructure/preferences/notice';
 import type { ReadingSizePreference, ThemePreference } from '../infrastructure/preferences/theme';
@@ -41,10 +49,13 @@ export default function SettingsPage() {
   const { preferences, resolvedTheme, storageWarning, setTheme, setReadingSize } =
     useWorkspacePreferences();
   const { openGuide } = useWebMcpGuide();
+  const webMcpActivity = useWebMcpActivity();
   const [flagCopied, setFlagCopied] = useState(false);
   const [noticeRestored, setNoticeRestored] = useState(false);
+  const [dryRunReport, setDryRunReport] = useState<WebMcpDiagnosticsDryRunResult | null>(null);
   const webMcpSupport = detectWebMcpSupport();
   const webMcpAvailable = webMcpSupport.available;
+  const activeToolNames = getActiveRegisteredToolNames();
   const themeRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const readingRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -196,7 +207,9 @@ export default function SettingsPage() {
             </div>
             <p className="text-xs leading-relaxed text-ink-muted">
               Cầu nối 2 chiều với Gemini in Chrome. Đã tích hợp Origin Trial trên{' '}
-              <code className="font-mono text-[11px]">{WEBMCP_ORIGIN_TRIAL_INFO.hostname}</code>{' '}
+              <code className="font-mono text-[11px]">
+                {WEBMCP_ORIGIN_TRIAL_INFO.hostnames.join(', ')}
+              </code>{' '}
               (đến Chrome {WEBMCP_ORIGIN_TRIAL_INFO.maxChromeMilestone}, muộn nhất{' '}
               {WEBMCP_ORIGIN_TRIAL_INFO.expiryDisplayVi}).
             </p>
@@ -206,13 +219,22 @@ export default function SettingsPage() {
             {webMcpAvailable ? (
               <div className="space-y-3">
                 <p className="text-ink">
-                  Trình duyệt đã bật <code className="font-mono text-xs">document.modelContext</code>{' '}
+                  Trình duyệt đã bật{' '}
+                  <code className="font-mono text-xs">
+                    {webMcpSupport.host === 'navigator'
+                      ? 'navigator.modelContext'
+                      : 'document.modelContext'}
+                  </code>{' '}
                   (tự động qua Origin Trial đến Chrome {WEBMCP_ORIGIN_TRIAL_INFO.maxChromeMilestone}{' '}
-                  · {WEBMCP_ORIGIN_TRIAL_INFO.expiryDisplayVi} hoặc qua cờ trình duyệt). Đầy đủ 3
-                  công cụ tự động (<code className="font-mono text-xs">hus_get_essay_context</code>,{' '}
-                  <code className="font-mono text-xs">hus_search_curriculum</code>,{' '}
-                  <code className="font-mono text-xs">hus_submit_essay_coaching</code>) sẵn sàng
-                  hoạt động; nếu về sau WebMCP không tự hoạt động mặc định, hãy bật cờ{' '}
+                  · {WEBMCP_ORIGIN_TRIAL_INFO.expiryDisplayVi} hoặc qua cờ trình duyệt). Đầy đủ{' '}
+                  {REGISTERED_TOOL_NAMES.length} công cụ tự động (
+                  {REGISTERED_TOOL_NAMES.map((name, idx) => (
+                    <span key={name}>
+                      {idx > 0 ? ', ' : ''}
+                      <code className="font-mono text-xs">{name}</code>
+                    </span>
+                  ))}
+                  ) sẵn sàng hoạt động; nếu về sau WebMCP không tự hoạt động mặc định, hãy bật cờ{' '}
                   <code className="font-mono text-xs">{WEBMCP_CHROME_FLAG_URL}</code>.
                 </p>
                 <button
@@ -293,6 +315,86 @@ export default function SettingsPage() {
                 </div>
               </>
             )}
+
+            {/* WebMCP Ecosystem Diagnostics & Dry-Run Console */}
+            <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-canvas/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-semibold text-ink">
+                    Kiểm thử cầu nối WebMCP &amp; Bảng công cụ (10 tool + 2 Form)
+                  </h3>
+                  <p className="text-xs text-ink-secondary">
+                    Chạy kiểm tra khép kín (Dry-run) khả năng đăng ký tool, vòng đời kích hoạt và chuẩn JSON hai chiều trên trình duyệt hiện tại.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-webmcp-dryrun-btn="true"
+                  onClick={() => setDryRunReport(runWebMcpDiagnosticsDryRun())}
+                  className="hus-btn hus-btn-secondary min-h-[34px] px-3 py-1 text-xs"
+                >
+                  Kiểm thử cầu nối WebMCP (Dry-run)
+                </button>
+              </div>
+
+              {webMcpActivity.labelVi ? (
+                <p data-webmcp-live-activity="true" className="text-xs font-medium text-accent">
+                  Hoạt động đang chạy: {webMcpActivity.labelVi}
+                </p>
+              ) : null}
+
+              {dryRunReport ? (
+                <div
+                  data-webmcp-dryrun-result="true"
+                  className="space-y-1.5 rounded-[var(--radius-md)] border border-border bg-surface p-3 text-xs"
+                >
+                  <p className="font-semibold text-ink">
+                    Kết quả kiểm thử lúc {new Date(dryRunReport.timestamp).toLocaleTimeString('vi-VN')} ·{' '}
+                    {dryRunReport.activeToolNames.length > 0
+                      ? `${dryRunReport.activeToolNames.length} tool đang hoạt động`
+                      : 'Sẵn sàng trên ngữ cảnh trang học/thi'}
+                  </p>
+                  <ul className="space-y-1">
+                    {dryRunReport.checks.map(chk => (
+                      <li key={chk.id} className="flex flex-wrap items-center gap-2 text-ink-secondary">
+                        <Badge tone={chk.passed ? 'success' : 'warning'}>
+                          {chk.passed ? 'ĐẠT' : 'LƯU Ý'}
+                        </Badge>
+                        <span className="font-medium text-ink">{chk.label}:</span>
+                        <span>{chk.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-3">
+                <div className="rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-2">
+                  <p className="font-semibold text-ink">Tự luận &amp; Đề thi ({REGISTERED_ESSAY_TOOL_NAMES.length})</p>
+                  <p className="mt-0.5 break-words font-mono text-ink-muted">
+                    {REGISTERED_ESSAY_TOOL_NAMES.join(', ')}
+                  </p>
+                </div>
+                <div className="rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-2">
+                  <p className="font-semibold text-ink">CodeLab Socratic ({REGISTERED_CODELAB_TOOL_NAMES.length})</p>
+                  <p className="mt-0.5 break-words font-mono text-ink-muted">
+                    {REGISTERED_CODELAB_TOOL_NAMES.join(', ')}
+                  </p>
+                </div>
+                <div className="rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-2">
+                  <p className="font-semibold text-ink">Chẩn đoán &amp; Ôn tập ({REGISTERED_DIAGNOSTICS_TOOL_NAMES.length})</p>
+                  <p className="mt-0.5 break-words font-mono text-ink-muted">
+                    {REGISTERED_DIAGNOSTICS_TOOL_NAMES.join(', ')}
+                  </p>
+                </div>
+              </div>
+
+              {activeToolNames.length > 0 ? (
+                <p className="font-mono text-[11px] text-ink-muted">
+                  Đang đăng ký trên port hiện tại: {activeToolNames.join(', ')}
+                </p>
+              ) : null}
+            </div>
           </div>
         </section>
 

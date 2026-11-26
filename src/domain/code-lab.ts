@@ -72,3 +72,64 @@ export interface CodePlaygroundSnippet {
   readonly code: string;
   readonly source: 'exercise' | 'lesson' | 'template';
 }
+
+export interface CodeLabWebMcpContextPacket {
+  readonly schemaVersion: 1;
+  readonly generatedAt: string;
+  readonly courseId: EntityId;
+  readonly mode: 'problem' | 'playground';
+  readonly language: CodeLanguage;
+  readonly problem?: {
+    readonly id: EntityId;
+    readonly title: string;
+    readonly chapterLabel: string;
+    readonly difficulty: CodeDifficulty;
+    readonly promptMarkdown: string;
+    readonly hints: readonly string[];
+    readonly visibleTestCases: readonly {
+      readonly label: string;
+      readonly stdin: string;
+      readonly expectedOutput: string;
+    }[];
+    readonly hiddenTestCaseCount: number;
+  } | undefined;
+  readonly snippetLabel?: string | undefined;
+  readonly studentCode: string;
+  readonly customStdin: string;
+  readonly latestExecution?: {
+    readonly status: ExecutionStatus;
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly errorMessage?: string | undefined;
+  } | undefined;
+  readonly latestJudgeSummary?: {
+    readonly passed: number;
+    readonly total: number;
+    readonly allPassed: boolean;
+    readonly failedVisibleVerdicts: readonly {
+      readonly label: string;
+      readonly status: ExecutionStatus;
+      readonly expectedOutput: string;
+      readonly actualOutput: string;
+      readonly stderr: string;
+    }[];
+    readonly failedHiddenCount: number;
+  } | undefined;
+  readonly pedagogicalContract: readonly string[];
+}
+
+export type CodeLabCoachingVerdict = 'pass' | 'needs-fix';
+
+export interface CodeLabCoachingFeedback {
+  readonly version: 1;
+  readonly problemId?: EntityId | undefined;
+  readonly language: CodeLanguage;
+  readonly source: 'webmcp' | 'clipboard';
+  readonly receivedAt: string;
+  readonly summary: string;
+  readonly verdict?: CodeLabCoachingVerdict | undefined;
+  readonly complexityNote?: string | undefined;
+  readonly bugHints: readonly string[];
+  readonly edgeCases: readonly string[];
+  readonly socraticQuestions: readonly string[];
+}

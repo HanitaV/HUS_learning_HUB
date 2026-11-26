@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { SemiEssayExercise } from '../../domain/semi-essay';
+import { summarizeStudentInteractiveDraft } from '../../core/learning/interactive-draft-summary';
 
 const INTERACTIVE_DRAFT_PREFIX = 'hus-learning-hub:interactive-draft:v1:';
 const MAX_SERIALIZED_LENGTH = 24_000;
@@ -128,4 +130,30 @@ export function useInteractiveStepDraft<T>(
   }, [draftKey]);
 
   return [state, setState, reset] as const;
+}
+
+/**
+ * Reads persisted non-written interactive drafts (`FBD`, `MO`, `Heatmap`, `Curve2d`,
+ * `AxisProjection`, `NumericUnit`, etc.) from `localStorage` for cross-step consistency checking.
+ */
+export function collectExerciseInteractiveDraftSummaries(
+  exercise: SemiEssayExercise,
+  keyPrefix = '',
+): readonly string[] {
+  if (typeof window === 'undefined') return [];
+  const summaries: string[] = [];
+  for (const step of exercise.steps) {
+    if (step.kind === 'written-reasoning') continue;
+    const draftKey = `${keyPrefix}${exercise.id}:${step.id}`;
+    try {
+      const raw = window.localStorage.getItem(buildInteractiveDraftStorageKey(draftKey));
+      if (!raw || raw.length > MAX_SERIALIZED_LENGTH) continue;
+      const parsed: unknown = JSON.parse(raw);
+      const summary = summarizeStudentInteractiveDraft(step, parsed);
+      if (summary) summaries.push(summary);
+    } catch {
+      // Ignore corrupt or blocked storage entries gracefully
+    }
+  }
+  return summaries;
 }
